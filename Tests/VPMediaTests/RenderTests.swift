@@ -76,3 +76,35 @@ private func quadrants(seconds: Double = 2, say: String? = nil) async throws -> 
     #expect(!r.hasAudio)
     #expect(abs(r.duration - 2) < 0.2)
 }
+
+private func frameCount(_ url: URL) async throws -> Int {
+    let a = AVURLAsset(url: url)
+    let r = try AVAssetReader(asset: a)
+    let o = AVAssetReaderTrackOutput(track: try await a.loadTracks(withMediaType: .video)[0], outputSettings: nil)
+    r.add(o); r.startReading()
+    var n = 0
+    while let s = o.copyNextSampleBuffer() { if CMSampleBufferGetNumSamples(s) > 0 { n += 1 } }
+    return n
+}
+
+@Test func jitteryTenFPSCaptureKeepsEveryFrame() async throws {
+    // A 10 fps capture whose frames arrive a few ms early: none should be dropped.
+    let times = (0..<30).map { i in i == 0 ? 0 : Double(i) * 0.1 - 0.004 }
+    let src = tempDir().appending(path: "j.mov")
+    try await makeTimedVideo(url: src, size: (320, 200), times: times)
+    let out = tempDir().appending(path: "w.mp4")
+    _ = try await renderWindowVideo(asset: AVURLAsset(url: src), display: Rect(x: 0, y: 0, w: 320, h: 200), canvas: (320, 200),
+                                    crop: { _ in Rect(x: 0, y: 0, w: 320, h: 200) }, clicks: [], to: out)
+    #expect(try await frameCount(out) >= 29)
+}
+
+@Test func thirtyFPSSourceIsThinnedToTen() async throws {
+    let times = (0..<90).map { Double($0) / 30 }
+    let src = tempDir().appending(path: "t.mov")
+    try await makeTimedVideo(url: src, size: (320, 200), times: times)
+    let out = tempDir().appending(path: "w.mp4")
+    _ = try await renderWindowVideo(asset: AVURLAsset(url: src), display: Rect(x: 0, y: 0, w: 320, h: 200), canvas: (320, 200),
+                                    crop: { _ in Rect(x: 0, y: 0, w: 320, h: 200) }, clicks: [], to: out)
+    let n = try await frameCount(out)
+    #expect(n >= 29 && n <= 31)
+}

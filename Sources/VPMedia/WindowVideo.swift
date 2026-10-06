@@ -49,13 +49,17 @@ public func renderWindowVideo(asset: AVAsset, display: Rect, canvas: (Int, Int),
     let space = CGColorSpaceCreateDeviceRGB()
     let bitmap = CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue
     let step = 1.0 / Double(fps)
-    var next = 0.0
+    // Each frame belongs to its nearest 1/fps slot; the first frame of each new slot is kept.
+    // (Comparing against a running "next" time drops early-jittered frames and, through
+    // floating-point floor(0.3 / 0.1) == 2, lets extra ones through.)
+    var lastSlot = -1
     var last = 0.0
     while let sample = output.copyNextSampleBuffer() {
         let pts = CMSampleBufferGetPresentationTimeStamp(sample)
         let t = pts.seconds
-        guard t + 0.001 >= next, let src = CMSampleBufferGetImageBuffer(sample) else { continue }
-        next = (t / step).rounded(.down) * step + step
+        let slot = Int((t / step).rounded())
+        guard slot > lastSlot, let src = CMSampleBufferGetImageBuffer(sample) else { continue }
+        lastSlot = slot
         last = t
         try await waitUntilReady(input)
         guard let pool = adaptor.pixelBufferPool else { throw MediaError.writeFailed("pool") }

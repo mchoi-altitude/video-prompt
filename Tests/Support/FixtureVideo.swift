@@ -153,3 +153,25 @@ public func pixel(_ url: URL, at t: Double, x: Int, y: Int) async throws -> (r: 
 public func isClose(_ a: (r: Int, g: Int, b: Int), _ b: (Int, Int, Int), tolerance: Int = 40) -> Bool {
     abs(a.r - b.0) <= tolerance && abs(a.g - b.1) <= tolerance && abs(a.b - b.2) <= tolerance
 }
+
+/// A gray video whose frames sit at exactly `times` (seconds), e.g. a jittery 10 fps capture.
+public func makeTimedVideo(url: URL, size: (Int, Int), times: [Double]) async throws {
+    let (w, h) = size
+    let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
+    let input = AVAssetWriterInput(mediaType: .video, outputSettings: [AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: w, AVVideoHeightKey: h])
+    let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
+        kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA, kCVPixelBufferWidthKey as String: w, kCVPixelBufferHeightKey as String: h])
+    writer.add(input)
+    writer.startWriting(); writer.startSession(atSourceTime: .zero)
+    for (i, t) in times.enumerated() {
+        while !input.isReadyForMoreMediaData { try await Task.sleep(for: .milliseconds(5)) }
+        var pb: CVPixelBuffer?
+        CVPixelBufferPoolCreatePixelBuffer(nil, adaptor.pixelBufferPool!, &pb)
+        CVPixelBufferLockBaseAddress(pb!, [])
+        memset(CVPixelBufferGetBaseAddress(pb!), Int32(40 + (i % 5) * 40), CVPixelBufferGetBytesPerRow(pb!) * h)
+        CVPixelBufferUnlockBaseAddress(pb!, [])
+        adaptor.append(pb!, withPresentationTime: CMTime(seconds: t, preferredTimescale: 6000))
+    }
+    input.markAsFinished()
+    await writer.finishWriting()
+}

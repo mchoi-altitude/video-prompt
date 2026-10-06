@@ -44,7 +44,7 @@ move to an AltitudeIQ GitHub organization later (see §9 for what must be stable
 | 5 | Shortcut | **⌃⌥⌘R** starts a recording in the last-used mode (Chrome window by default). |
 | 6 | Control bar | Floating ● timer / ❚❚ / ✎ / ■, **hidden from the capture**. Drawings *are* captured. |
 | 7 | Countdown | 3-2-1 before recording starts. |
-| 8 | Drawing | **Pen, arrow, box**, red only, plus undo and clear. **⌃⌥⌘D toggles Draw** while recording (no extra permission; a hold-a-key mode would need Input Monitoring). While Draw is on, clicks don't reach apps. Marks **fade after 3 s** by default (setting: keep until Stop). |
+| 8 | Drawing | **Pen, arrow, box**, red only, plus undo and clear. **⌥D toggles Draw** while recording and **Esc** stops drawing: both registered only while they apply, so they never take keys from other apps otherwise (no extra permission; a hold-a-key mode would need Input Monitoring). While Draw is on, clicks don't reach apps. Marks **fade after 3 s** by default (setting: keep until Stop). |
 | 9 | Time limit | Soft warning at **3:00** ("long recordings give Claude many frames"). No hard stop. |
 | 10 | Review step | **On** by default, with the main button focused so **Return sends**. A video preview, the transcript (fixable) and a typed note. **No trimming or frame removal**: Discard and re-record instead. Setting: skip review. |
 | 11 | Retention | Auto-delete after **3 days** (setting: 1 / 3 / 7 / 30 days, keep the last 20, never). |

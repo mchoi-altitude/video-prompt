@@ -84,15 +84,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menuItems(waiting: watcher.current, chrome: frontmostChromeWindow(windows.windows()),
                       lastMode: settings.settings.lastMode, recordingCount: store.list().count, busy: MenuBusy(controller.state))
         }, onAction: { [unowned self] in handle($0) })
-        hotkeys.register(kVK_ANSI_R, id: 1) { [weak self] in
+        hotkeys.register(kVK_ANSI_R, modifiers: Hotkeys.controlOptionCommand, id: 1) { [weak self] in
             guard let self else { return }
             if MenuBusy(self.controller.state) == .recording { self.stop() } else { self.startLastMode() }
         }
-        // Draw on/off while recording (not while paused: nothing is recorded then).
-        hotkeys.register(kVK_ANSI_D, id: 2) { [weak self] in
-            guard let self, case .recording(paused: false) = self.controller.state else { return }
-            self.controller.drawOn.toggle()
-        }
+
         controller.excludedWindowIDs = { [unowned self] in [controlBar.windowID] }
         // The system ended capture (menu-bar indicator, display unplugged, sleep): keep what was
         // recorded and move on to processing, rather than sitting in "recording".
@@ -104,7 +100,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay.onStroke = { [unowned self] s in
             controller.log(.stroke(startHost: s.startHost, points: s.points, tool: s.tool), hostTime: s.endHost ?? s.startHost)
         }
-        controller.$drawOn.sink { [unowned self] on in overlay.drawOn = on }.store(in: &subs)
+        controller.$drawOn.sink { [unowned self] on in
+            overlay.drawOn = on
+            // Esc stops drawing, and only while drawing (Esc belongs to other apps otherwise).
+            if on {
+                hotkeys.register(kVK_Escape, modifiers: 0, id: 3) { [weak self] in self?.controller.drawOn = false }
+            } else {
+                hotkeys.unregister(3)
+            }
+        }.store(in: &subs)
         // @Published emits before storing; handle on the next main-queue turn so the stored
         // value is current and a reset() inside the handler isn't overwritten.
         controller.$state.receive(on: DispatchQueue.main).sink { [unowned self] s in stateChanged(s) }.store(in: &subs)
@@ -234,6 +238,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func stateChanged(_ s: RecState) {
         log.notice("state \(String(describing: s), privacy: .public)")
         refreshBadge()
+        // ⌥D toggles drawing, only while recording (not paused: nothing is recorded then).
+        if case .recording(paused: false) = s {
+            hotkeys.register(kVK_ANSI_D, modifiers: Hotkeys.option, id: 2) { [weak self] in
+                guard let self, case .recording(paused: false) = self.controller.state else { return }
+                self.controller.drawOn.toggle()
+            }
+        } else {
+            hotkeys.unregister(2)
+        }
         switch s {
         case let .countdown(n):
             countdown.show(n, label: label(settings.settings.lastMode), on: targetScreen)

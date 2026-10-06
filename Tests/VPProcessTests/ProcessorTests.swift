@@ -181,3 +181,13 @@ func tempPathsForProcess() -> Paths { Paths(root: tempDir()) }
     let t = try String(contentsOf: paths.recording(id).appending(path: "timeline.md"), encoding: .utf8)
     #expect(t.contains("_(no narration was detected)_"))
 }
+
+@Test func tallWindowIsScaledToMaxHeight() async throws {
+    let paths = tempPathsForProcess()
+    let id = try await makeRaw(paths, events: resize + [.click(seg: 1, t: 1, p: Point(x: 80, y: 280))])
+    // Cap at 150 px: the 400×300 window becomes 200×150, and the click (60,250) becomes (30,125).
+    _ = try await Processor(store: Store(paths: paths), paths: paths, transcriber: nil, calendar: utc, maxVideoHeight: 150).process(id: id)
+    let m = try Store(paths: paths).manifest(id)
+    #expect(m.video.width == 200 && m.video.height == 150)
+    #expect(m.clicks.first.map { [$0.x, $0.y] } == [30, 125])
+}

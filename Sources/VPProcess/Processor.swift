@@ -17,9 +17,12 @@ public struct Processor: Sendable {
     let keepRaw: Bool
     /// The `vp-frames` command named in timeline.md (the paste path has no MCP tools).
     let vpFramesPath: String
+    /// The video is scaled down (not cropped) to at most this height.
+    let maxVideoHeight: Int
 
     public init(store: Store, paths: Paths, transcriber: Transcriber?, calendar: Calendar = .current, keepRaw: Bool = false,
-                vpFramesPath: String = Processor.defaultVPFramesPath) {
+                vpFramesPath: String = Processor.defaultVPFramesPath, maxVideoHeight: Int = VideoMaxHeight) {
+        self.maxVideoHeight = maxVideoHeight
         self.store = store; self.paths = paths; self.transcriber = transcriber; self.calendar = calendar; self.keepRaw = keepRaw
         self.vpFramesPath = vpFramesPath
     }
@@ -90,11 +93,14 @@ public struct Processor: Sendable {
         let crop: @Sendable (Double) -> Rect? = { t in timeline.crop(at: t).flatMap { clip($0, to: display) } }
         // Canvas: the largest crop the recording ever had, in video pixels.
         let crops = (windows.isEmpty ? [0.0] : windows.map(\.t)).compactMap(crop)
-        let canvas = (Int(((crops.map(\.w).max() ?? display.w) * sx).rounded()), Int(((crops.map(\.h).max() ?? display.h) * sy).rounded()))
+        let fullW = (crops.map(\.w).max() ?? display.w) * sx, fullH = (crops.map(\.h).max() ?? display.h) * sy
+        // Scale (never crop) so the video is at most maxVideoHeight tall.
+        let outScale = min(1, Double(maxVideoHeight) / fullH)
+        let canvas = (Int((fullW * outScale).rounded()), Int((fullH * outScale).rounded()))
         /// A screen point → video pixels at time t (content sits top-left on the canvas).
         func videoPixels(_ p: Point, at t: Double) -> [Int]? {
             guard let c = crop(t) else { return nil }
-            return toFramePixels(p, crop: c, frameW: Int((c.w * sx).rounded()), frameH: Int((c.h * sy).rounded()))
+            return toFramePixels(p, crop: c, frameW: Int((c.w * sx * outScale).rounded()), frameH: Int((c.h * sy * outScale).rounded()))
         }
 
         // Narration.
@@ -123,7 +129,7 @@ public struct Processor: Sendable {
         // The window video, then its overview.
         let rendered = try await renderWindowVideo(asset: asset, display: display, canvas: canvas, crop: crop,
                                                    clicks: clicks.map { ClickMark(t: $0.t, x: Double($0.x), y: Double($0.y)) },
-                                                   to: dir.appending(path: "video.mp4"))
+                                                   outputScale: outScale, to: dir.appending(path: "video.mp4"))
         let overview = try await makeOverview(video: dir.appending(path: "video.mp4"), to: dir.appending(path: "overview.jpg"))
 
         let manifest = Manifest(id: id, duration: round2(rendered.duration), mode: session.mode, transcript: transcript,

@@ -18,9 +18,10 @@ public struct RenderedVideo: Sendable, Equatable {
 
 /// Renders the recorded window as its own video: every captured frame is cropped to `crop(t)`
 /// (screen points; clipped to `display`), drawn top-left on a fixed `canvas` (pixels) padded with
-/// #111111, click rings drawn on top. Narration audio is carried over unchanged.
+/// #111111, click rings drawn on top. `outputScale` shrinks the captured pixels (the whole window,
+/// never a crop) to fit the canvas. Narration audio is carried over unchanged.
 public func renderWindowVideo(asset: AVAsset, display: Rect, canvas: (Int, Int), crop: @escaping @Sendable (Double) -> Rect?,
-                              clicks: [ClickMark], fps: Int = VideoFPS, to url: URL) async throws -> RenderedVideo {
+                              clicks: [ClickMark], outputScale: Double = 1, fps: Int = VideoFPS, to url: URL) async throws -> RenderedVideo {
     let (cw, ch) = (max(2, canvas.0 / 2 * 2), max(2, canvas.1 / 2 * 2))
     let silent = url.deletingLastPathComponent().appending(path: ".render-\(UUID().uuidString).mp4")
     defer { try? FileManager.default.removeItem(at: silent) }
@@ -81,7 +82,9 @@ public func renderWindowVideo(asset: AVAsset, display: Rect, canvas: (Int, Int),
                 .intersection(CGRect(x: 0, y: 0, width: full.width, height: full.height))
             if let piece = full.cropping(to: px) {
                 // CG's origin is bottom-left: pin the piece to the canvas's top-left.
-                ctx.draw(piece, in: CGRect(x: 0, y: Double(ch) - Double(piece.height), width: Double(piece.width), height: Double(piece.height)))
+                let w = Double(piece.width) * outputScale, h = Double(piece.height) * outputScale
+                ctx.interpolationQuality = outputScale < 1 ? .high : .none
+                ctx.draw(piece, in: CGRect(x: 0, y: Double(ch) - h, width: w, height: h))
             }
         }
         drawClickRings(ctx, clicks: clicks, t: t, canvasHeight: ch)

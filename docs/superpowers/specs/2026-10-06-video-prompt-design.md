@@ -49,13 +49,14 @@ move to an AltitudeIQ GitHub organization later (see §9 for what must be stable
 | 10 | Review step | **On** by default, with the main button focused so **Return sends**. A video preview, the transcript (fixable) and a typed note. **No trimming or frame removal**: Discard and re-record instead. Setting: skip review. |
 | 11 | Retention | Auto-delete after **3 days** (setting: 1 / 3 / 7 / 30 days, keep the last 20, never). |
 | 12 | Manual delete | **Recordings…** window: trash per row, checkboxes, "Select all sent", bulk delete. Deleted recordings go to the **macOS Trash** (no confirm dialog). |
-| 13 | Video | The **window-only video is kept** with the recording and expires with it (§2 #11). The full-display capture (`raw/`) is deleted once the window video exists. 10 fps, full resolution: about 9 MB per minute (measured: 48 s of a 1392×1048 Chrome window → 7.7 MB). |
+| 13 | Video | The **window-only video is kept** with the recording and expires with it (§2 #11). The full-display capture (`raw/`) is deleted once the window video exists. 10 fps, at most 1080 px tall (§2 #22): roughly 7–9 MB per minute. |
 | 14 | Recording titles | Taken automatically from the first narration sentence. |
 | 15 | First run | Setup window: Screen Recording → Microphone → Connect Claude Code → optional 5-second test (§3.0). |
 | 16 | Sharing with teammates | Not in v1. |
 | 17 | Privacy controls | No blur or app exclusion in v1. Chrome-window mode (the kept video is cropped to that window), the review preview, and Discard cover it. |
 | 18 | Telemetry | **None.** The app makes no network calls except checking for updates (§8). |
 | 19 | Frame rate | **10 fps** capture and video (one constant). UI states of ≥ 150 ms land in 1–2 frames; a 0.4 s flash was found in testing. |
+| 22 | Video resolution | Scaled (never cropped) to at most **1080 px tall**. Retina captures were ~30 MB/min for detail Claude never sees; at 1080 small UI text stays legible (checked on a Gmail recording). |
 | 20 | Clicks | Logged (global mouse monitor, no extra permission) and drawn as a short **ring in the video**; listed in the timeline. |
 | 21 | What Claude gets | `timeline.md` (narration, drawings, clicks, hidden-window and pause marks, with times) + `overview.jpg` (a thumbnail per second) + the video path; frames on demand via `get_frames` (plugin) or the bundled `vp-frames` CLI (paste path). No keyframe selection. |
 

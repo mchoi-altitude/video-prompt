@@ -30,13 +30,23 @@ public final class RawRecorder: @unchecked Sendable {
         events = try FileHandle(forWritingTo: url)
     }
 
-    /// Opens the next segment and returns the file the capture should write.
-    public func beginSegment(hostTime: Double) -> URL {
+    /// The next segment's file, for the capture to write. Events wait for `startSegment`.
+    public func prepareSegment() -> URL {
         lock.withLock {
             segment += 1
-            segmentStart = hostTime
+            segmentStart = nil
             return raw.appending(path: String(format: "seg_%03d.mov", segment))
         }
+    }
+
+    /// The prepared segment's file really began at `hostTime` (capture started late).
+    public func startSegment(hostTime: Double) { lock.withLock { segmentStart = hostTime } }
+
+    /// `prepareSegment` + `startSegment` at once.
+    public func beginSegment(hostTime: Double) -> URL {
+        let url = prepareSegment()
+        startSegment(hostTime: hostTime)
+        return url
     }
 
     public func endSegment(hostTime: Double) { lock.withLock { segmentStart = nil } }

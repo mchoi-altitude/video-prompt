@@ -122,3 +122,85 @@ private func startRecording(_ c: RecordingController, mode: CaptureMode = .windo
     await c.stop()
     guard case .failed = c.state else { Issue.record("state \(c.state)"); return }
 }
+
+/// A capture whose start/stop wait until the test opens the gate (like a permission prompt).
+final class GatedCapture: CaptureBackend, @unchecked Sendable {
+    var calls: [String] = []
+    var startDelayClock: ManualClock?
+    var fail: Error?
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+    func open() { let w = waiting; waiting = []; w.forEach { $0.resume() } }
+    private func gate() async { await withCheckedContinuation { waiting.append($0) } }
+    func start(displayID: UInt32, excludingWindowIDs: [UInt32], firstSegment: URL) async throws {
+        calls.append("start"); await gate()
+        if let fail { throw fail }
+        startDelayClock?.now += 0.7
+    }
+    func newSegment(_ url: URL) async throws { calls.append("newSegment") }
+    func pause() async throws { calls.append("pause") }
+    func stop() async throws { calls.append("stop"); await gate() }
+}
+
+@MainActor
+private func gated(_ cap: GatedCapture, clock: ManualClock = ManualClock()) -> (RecordingController, Paths) {
+    let paths = Paths(root: tempDir())
+    let settings = SettingsStore(defaults: UserDefaults(suiteName: "vp-\(UUID().uuidString)")!)
+    let c = RecordingController(paths: paths, store: Store(paths: paths), capture: cap, clock: { clock.now },
+                                makeProcessor: { Processor(store: Store(paths: paths), paths: paths, transcriber: nil) }, settings: settings)
+    return (c, paths)
+}
+
+@Test @MainActor func slowStartIsNotStartedTwice() async throws {
+    let cap = GatedCapture()
+    let (c, _) = gated(cap)
+    await c.start(mode: .window, target: .window(chrome, displayID: 1, display: display))
+    await c.tick(); await c.tick()
+    let first = Task { await c.tick() }          // countdown(1) → starting, blocks in capture.start
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(c.state == .starting)
+    await c.tick(); await c.tick()               // ticks while the start is in flight
+    cap.open()
+    await first.value
+    #expect(cap.calls == ["start"])
+    #expect(c.state == .recording(paused: false))
+}
+
+@Test @MainActor func doubleStopRunsOnce() async throws {
+    let cap = GatedCapture()
+    let (c, _) = gated(cap)
+    await c.start(mode: .window, target: .window(chrome, displayID: 1, display: display))
+    await c.tick(); await c.tick()
+    let s = Task { await c.tick() }; try await Task.sleep(for: .milliseconds(20)); cap.open(); await s.value
+    let stop1 = Task { await c.stop() }
+    try await Task.sleep(for: .milliseconds(20))
+    await c.stop()                               // second click while the first is finishing
+    cap.open()
+    await stop1.value
+    #expect(cap.calls.filter { $0 == "stop" }.count == 1)
+}
+
+@Test @MainActor func eventTimesStartWhenCaptureStarts() async throws {
+    let clock = ManualClock()
+    let cap = GatedCapture(); cap.startDelayClock = clock
+    let (c, paths) = gated(cap, clock: clock)
+    clock.now = 10
+    await c.start(mode: .window, target: .window(chrome, displayID: 1, display: display))
+    await c.tick(); await c.tick()
+    let s = Task { await c.tick() }; try await Task.sleep(for: .milliseconds(20)); cap.open(); await s.value
+    // The file began 0.7 s after the start call, at 10.7.
+    c.log(.cursor(Point(x: 1, y: 1)), hostTime: 12.7)
+    let id = try #require(c.recordingID)
+    let line = try String(contentsOf: paths.raw(id).appending(path: "events.jsonl"), encoding: .utf8)
+    #expect(try JSON.decoder.decode(RawEvent.self, from: Data(line.utf8)) == .cursor(seg: 1, t: 2.0, p: Point(x: 1, y: 1)))
+}
+
+@Test @MainActor func failedStartRemovesRecordingFolder() async throws {
+    let cap = GatedCapture(); cap.fail = CaptureError.permissionDenied
+    let (c, paths) = gated(cap)
+    await c.start(mode: .window, target: .window(chrome, displayID: 1, display: display))
+    let id = try #require(c.recordingID)
+    await c.tick(); await c.tick()
+    let s = Task { await c.tick() }; try await Task.sleep(for: .milliseconds(20)); cap.open(); await s.value
+    guard case .failed = c.state else { Issue.record("state \(c.state)"); return }
+    #expect(!FileManager.default.fileExists(atPath: paths.recording(id).path))
+}

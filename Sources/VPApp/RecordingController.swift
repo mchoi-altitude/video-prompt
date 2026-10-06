@@ -6,6 +6,8 @@ import VPProcess
 public enum RecState: Equatable, Sendable {
     case idle
     case countdown(Int)
+    /// Countdown done; waiting for ScreenCaptureKit (may sit behind a permission prompt).
+    case starting
     case recording(paused: Bool)
     case processing(id: String)
     case reviewing(id: String)
@@ -47,6 +49,8 @@ public final class RecordingController: ObservableObject {
     private var target: CaptureTarget?
     private var accumulated = 0.0
     private var runningSince: Double?
+    /// A start, pause or stop is awaiting the capture; further clicks and ticks are ignored.
+    private var busy = false
 
     public init(paths: Paths, store: Store, capture: CaptureBackend, clock: @escaping () -> Double,
                 makeProcessor: @escaping () -> Processor, settings: SettingsStore) {
@@ -76,10 +80,14 @@ public final class RecordingController: ObservableObject {
     }
 
     public func tick() async {
+        guard !busy else { return }
         switch state {
         case let .countdown(n) where n > 1:
             state = .countdown(n - 1)
         case .countdown:
+            busy = true
+            defer { busy = false }
+            state = .starting
             await beginCapture()
         case .recording(paused: false):
             elapsed = accumulated + (runningSince.map { clock() - $0 } ?? 0)
@@ -92,13 +100,17 @@ public final class RecordingController: ObservableObject {
     public func log(_ kind: EventKind, hostTime: Double) { recorder?.log(kind, hostTime: hostTime) }
 
     public func togglePause() async {
-        guard case let .recording(paused) = state, let recorder else { return }
+        guard !busy, case let .recording(paused) = state, let recorder else { return }
+        busy = true
+        defer { busy = false }
         let now = clock()
         do {
             if paused {
-                let url = recorder.beginSegment(hostTime: now)
+                let url = recorder.prepareSegment()
                 try await capture.newSegment(url)
-                runningSince = now
+                let began = clock()
+                recorder.startSegment(hostTime: began)
+                runningSince = began
                 state = .recording(paused: false)
             } else {
                 drawOn = false
@@ -115,7 +127,9 @@ public final class RecordingController: ObservableObject {
     }
 
     public func stop() async {
-        guard case .recording = state, let recorder else { return }
+        guard !busy, case .recording = state, let recorder else { return }
+        busy = true
+        defer { busy = false }
         drawOn = false  // first: never leave the screen swallowing clicks
         let now = clock()
         do {
@@ -148,16 +162,21 @@ public final class RecordingController: ObservableObject {
 
     private func beginCapture() async {
         guard let recorder, let target else { return }
-        let now = clock()
-        let url = recorder.beginSegment(hostTime: now)
+        let url = recorder.prepareSegment()
         do {
             try await capture.start(displayID: target.displayID, excludingWindowIDs: excludedWindowIDs(), firstSegment: url)
-            runningSince = now
+            // Event times count from when the file actually began, not from the click.
+            let began = clock()
+            recorder.startSegment(hostTime: began)
+            runningSince = began
             state = .recording(paused: false)
-        } catch CaptureError.permissionDenied {
-            state = .failed("Allow Screen Recording for Video Prompt in System Settings › Privacy & Security, then try again.")
         } catch {
-            state = .failed("Couldn't start recording: \(error.localizedDescription)")
+            // Nothing usable was recorded: don't leave an invisible folder behind.
+            try? recorder.close()
+            try? FileManager.default.removeItem(at: paths.recording(recorder.id))
+            state = .failed((error as? CaptureError) == .permissionDenied
+                ? "Allow Screen Recording for Video Prompt in System Settings › Privacy & Security, then try again."
+                : "Couldn't start recording: \(error.localizedDescription)")
         }
     }
 }

@@ -171,7 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             countdown.hide(); controlBar.hide(); overlay.hide(); tracker = nil
             toast.show(message, seconds: 8)
             controller.reset()
-        case .idle:
+        case .idle, .starting:
             break
         }
     }

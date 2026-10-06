@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "screen-prompt"
+version = "0.1.0"
+description = "Record your screen, draw on it, and narrate — then hand it to Claude Code as a prompt."
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6>=6.6",
+    "faster-whisper>=1.0",
+    "mcp>=1.2",
+]
+
+[project.scripts]
+screen-prompt = "screen_prompt.app:main"
+screen-prompt-mcp = "screen_prompt.mcp_server:main"
+screen-prompt-process = "screen_prompt.process:main"
+
+[tool.setuptools]
+packages = ["screen_prompt", "screen_prompt.capture"]

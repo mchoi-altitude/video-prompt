@@ -25,31 +25,45 @@ handed to a Claude Code session.
 
 ## Key technical facts (learned the hard way)
 
-- **Claude doesn't take video input.** A recording has to become keyframes (JPEG) + a
-  timestamped transcript + drawing/cursor events on one timeline. `prototype/screen_prompt/process.py`
-  does this, and its output format (`manifest.json`, `prompt.md`) is worth keeping.
-- Keyframe choice: always the first and last frame, frames just after each finished drawing,
-  scene changes (ffmpeg `select='gt(scene,0.1)'`), and the midpoint of each narration sentence.
-  They're deduplicated to at least 1.5s apart, capped at about 24, with the long edge at most
-  1568px.
+- **Video-first (2026-10-06).** Picking "key moments" missed brief screens. A recording is now
+  the recorded window as `video.mp4` (10 fps, narration, drawings, click rings) + `timeline.md` +
+  `overview.jpg`; Claude pulls frames itself with the `get_frames` MCP tool or the bundled
+  `vp-frames` CLI. The API has no video content type, but Claude as an agent with the file and
+  a frame tool handles video well (it found a 0.4 s flash in testing). Don't reintroduce
+  keyframe selection.
 - Whisper returns long segments, so we split the narration into sentences using word
-  timestamps. That lets it interleave with frames.
-- Drawings are logged as points (fractions of the screen) and converted to pixel coordinates in
-  the frame images. A simple shape heuristic produces text like "circled the area (x0,y0)–(x1,y1)",
-  which gives Claude a text anchor alongside the red marks in the images.
+  timestamps. That lets it interleave with the other timeline events.
+- Drawings and clicks are logged in global top-left screen points and converted to pixels of the
+  recording video. A shape heuristic produces text like "circled the area (x0,y0)–(x1,y1)" (or
+  "drew a curved mark around …" for open loops) as a text anchor for the red marks.
 - Pausing = ending a segment and starting a new one; segments are concatenated at the end.
   Event times are stored per segment and mapped using the actual segment durations.
 - Handing off to Claude Code, two mechanisms planned (both):
   1. An MCP server with `get_latest_recording` (returns text + images inline), `list_recordings`,
      and maybe `wait_for_next_recording` so Claude can ask the user to record something and wait.
      Ship it as a Claude Code plugin so teammates get it with one install.
-  2. Copy an `@/path/to/prompt.md` reference to the clipboard on Stop.
+  2. Copy an `@"/path/to/timeline.md"` reference to the clipboard (quoted: the data root,
+     "Application Support", has a space).
 - Python MCP SDK is now v2: `from mcp.server.mcpserver import MCPServer, Image`
   (FastMCP was renamed). Tools returning a list of `str`/`Image` should use
   `structured_output=False`.
 - faster-whisper 1.2.1 breaks with PyAV 19 when given a file path. Pass a float32 numpy array
   of 16 kHz mono samples instead. On Mac, consider whisper.cpp or Apple's Speech framework
   instead of Python.
+
+## Working on this Mac (learned the hard way)
+
+- No Xcode: SwiftPM + Command Line Tools. Tests: `scripts/test.sh` (Testing.framework paths;
+  `--no-parallel`, because parallel video tests starve the hardware encoder and hang).
+- In zsh, `log` is a builtin. Read the app's logs with `/usr/bin/log show --predicate
+  'subsystem == "ai.altitudeiq.videoprompt"'`.
+- Don't run `screencapture` or other permission-needing commands from the terminal: macOS then
+  asks the user to grant *iTerm* and restart it.
+- The app is signed with a local "Video Prompt Dev" identity so permission grants survive
+  rebuilds; ad-hoc builds leave stale grants (`tccutil reset ScreenCapture
+  ai.altitudeiq.videoprompt`). `build-app.sh` gives up on a keychain-blocked codesign after 60 s.
+- On a full menu bar, macOS can put a new status item under the MacBook notch; the app asks for
+  the far-right position (`NSStatusItem Preferred Position`).
 
 ## Linux notes (for later)
 

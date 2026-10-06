@@ -102,8 +102,11 @@ struct VideoPreview: NSViewRepresentable {
     func makeNSView(context: Context) -> AVPlayerView {
         let v = AVPlayerView()
         v.controlsStyle = .inline
-        v.player = AVPlayer(url: url)
-        v.player?.play()
+        let player = AVPlayer(url: url)
+        // Plays silently: the user's narration shouldn't blare in a shared room. Unmute in the controls.
+        player.isMuted = true
+        v.player = player
+        player.play()
         return v
     }
     func updateNSView(_ v: AVPlayerView, context: Context) {}

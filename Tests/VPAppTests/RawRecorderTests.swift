@@ -70,3 +70,11 @@ private func events(_ p: Paths, _ id: String) throws -> [RawEvent] {
     let meta = try await Processor(store: Store(paths: p), paths: p, transcriber: nil).process(id: r.id)
     #expect(meta.status == .reviewing)
 }
+
+@Test func clickIsLogged() throws {
+    let (r, p) = try recorder()
+    _ = r.beginSegment(hostTime: 10)
+    r.log(.click(Point(x: 812, y: 96)), hostTime: 12.5)
+    try r.close()
+    #expect(try events(p, r.id) == [.click(seg: 1, t: 2.5, p: Point(x: 812, y: 96))])
+}

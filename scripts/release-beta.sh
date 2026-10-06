@@ -14,7 +14,7 @@ scripts/test.sh >/dev/null
 scripts/build-app.sh --release
 APP="build/Video Prompt.app"
 # Every beta must carry the same signature, or teammates lose their permission grants.
-codesign -dv "$APP" 2>&1 | grep -q "Authority=Video Prompt Dev" || { echo "Not signed with 'Video Prompt Dev' (run scripts/make-dev-cert.sh)." >&2; exit 1; }
+codesign -dv --verbose=2 "$APP" 2>&1 | grep -q "Authority=Video Prompt Dev" || { echo "Not signed with 'Video Prompt Dev' (run scripts/make-dev-cert.sh)." >&2; exit 1; }
 
 STAGE="build/video-prompt-beta"
 rm -rf "$STAGE" build/VideoPrompt-beta.zip

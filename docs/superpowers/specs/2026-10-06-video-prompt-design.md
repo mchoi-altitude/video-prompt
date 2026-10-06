@@ -142,7 +142,7 @@ days", Copy reference and a trash button.
 ## 4. Architecture
 
 ```
-┌──────────────────── VideoPrompt.app (Swift, macOS 14+) ───────────────────────┐
+┌──────────────────── VideoPrompt.app (Swift, macOS 15+) ───────────────────────┐
 │ MenuBar ─ ControlBar ─ DrawingOverlay ─ ReviewPanel ─ RecordingsWindow ─ Setup │
 │        │                                                                       │
 │ CaptureSession (ScreenCaptureKit: display video + mic)                         │
@@ -161,6 +161,10 @@ days", Copy reference and a trash button.
 │ wait_for_next_recording                            │
 └────────────────────────────────────────────────────┘
 ```
+
+**macOS 15+** (raised from 14 while planning the app): `SCRecordingOutput` and
+`SCStreamConfiguration.captureMicrophone` are 15+, and they make each pause-separated segment one
+ScreenCaptureKit call with the narration already in the file.
 
 Each unit has one job and one interface:
 

@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "VideoPrompt",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v15)],
     targets: [
         .target(name: "VPCore"),
         .target(name: "VPMedia", dependencies: ["VPCore"]),
@@ -11,6 +11,7 @@ let package = Package(
         .target(name: "VPMCP", dependencies: ["VPCore"]),
         .executableTarget(name: "vp-mcp", dependencies: ["VPMCP"]),
         .executableTarget(name: "vp-process", dependencies: ["VPProcess"]),
+        .executableTarget(name: "VideoPrompt", dependencies: ["VPCore", "VPProcess"]),
         .target(name: "VPTestSupport", dependencies: ["VPCore", "VPMedia"], path: "Tests/Support"),
         .testTarget(name: "VPCoreTests", dependencies: ["VPCore"], resources: [.copy("Golden")]),
         .testTarget(name: "VPProcessTests", dependencies: ["VPProcess", "VPTestSupport"]),

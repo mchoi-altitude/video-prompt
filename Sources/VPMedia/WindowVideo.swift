@@ -57,7 +57,7 @@ public func renderWindowVideo(asset: AVAsset, display: Rect, canvas: (Int, Int),
         guard t + 0.001 >= next, let src = CMSampleBufferGetImageBuffer(sample) else { continue }
         next = (t / step).rounded(.down) * step + step
         last = t
-        while !input.isReadyForMoreMediaData { try await Task.sleep(for: .milliseconds(2)) }
+        try await waitUntilReady(input)
         guard let pool = adaptor.pixelBufferPool else { throw MediaError.writeFailed("pool") }
         var outBuf: CVPixelBuffer?
         CVPixelBufferPoolCreatePixelBuffer(nil, pool, &outBuf)
@@ -113,7 +113,16 @@ public func renderWindowVideo(asset: AVAsset, display: Rect, canvas: (Int, Int),
     return RenderedVideo(width: cw, height: ch, duration: duration, hasAudio: true)
 }
 
-/// The 30 fps-independent frame rate for capture and the window video.
+/// Waits for the encoder, but never forever: a starved hardware encoder must fail, not hang.
+func waitUntilReady(_ input: AVAssetWriterInput, timeout: Double = 15) async throws {
+    let deadline = Date().addingTimeInterval(timeout)
+    while !input.isReadyForMoreMediaData {
+        if Date() > deadline { throw MediaError.writeFailed("video encoder not ready after \(Int(timeout)) s") }
+        try await Task.sleep(for: .milliseconds(2))
+    }
+}
+
+/// Frames per second for capture and the window video.
 public let VideoFPS = 10
 
 func clipRect(_ r: Rect, to b: Rect) -> Rect? {

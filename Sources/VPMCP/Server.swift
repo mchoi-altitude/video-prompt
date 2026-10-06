@@ -35,7 +35,7 @@ public actor MCPServer {
         let id = (try? JSONDecoder().decode(Request.self, from: Data(line.utf8)))?.id
         let task = Task {
             if let out = await self.handle(line: line) { await write(out) }
-            if let id { await self.finished(id) }
+            if let id { self.finished(id) }
         }
         if let id { running[id] = task }
     }

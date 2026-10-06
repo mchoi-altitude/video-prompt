@@ -19,11 +19,24 @@ scripts/test.sh                   # all tests (wraps `swift test` with the Testi
 export VIDEO_PROMPT_HOME=$TMPDIR/vp     # keep test recordings out of the real folder
 ln -s "$HOME/Library/Application Support/VideoPrompt/models" $VIDEO_PROMPT_HOME/models
 ID=$(scripts/make-fixture.sh)           # needs ffmpeg
-swift run vp-process $ID                # prints the prompt.md path
+swift run vp-process $ID                # prints the timeline.md path
 swift build -c release
 export VIDEO_PROMPT_MCP=$PWD/.build/release/vp-mcp
 claude --plugin-dir plugins/video-prompt   # then: "look at my recording"
 ```
+
+### The Mac app
+
+No Xcode needed for development. One-time: `scripts/make-dev-cert.sh` creates a local
+"Video Prompt Dev" signing identity, so macOS keeps the app's Screen Recording and Microphone
+permission across rebuilds. Then:
+
+```bash
+scripts/build-app.sh            # → build/Video Prompt.app (debug; --release for release)
+open "build/Video Prompt.app"
+```
+
+`docs/manual-test.md` is the end-to-end checklist.
 
 ### The Claude Code plugin
 
@@ -42,11 +55,12 @@ as failed. Install the app, or set `VIDEO_PROMPT_MCP` to a built `vp-mcp`.
 
 - `docs/superpowers/specs/2026-10-06-video-prompt-design.md`: the v1 design. Start here.
   (`docs/user-journey.md` is the original draft.)
-- `Sources/`: Swift package. `VPCore` (models, storage, timeline, prompt.md), `VPMedia`
-  (AVFoundation), `VPProcess` (pipeline + whisper.cpp), `VPMCP` + `vp-mcp` (MCP server),
-  `vp-process` (CLI).
+- `Sources/`: Swift package. `VPCore` (models, storage, timeline.md), `VPMedia`
+  (AVFoundation: window video, overview, frame extraction), `VPProcess` (pipeline +
+  whisper.cpp), `VPMCP` + `vp-mcp` (MCP server), `vp-process` and `vp-frames` (CLIs), `VPApp` +
+  `VPCapture` + `VideoPrompt` (the Mac app).
 - `plugins/video-prompt`, `.claude-plugin/marketplace.json`: the Claude Code plugin.
-- `prototype/`: a Python prototype (package name `screen_prompt`) of the post-recording pipeline (join segments → transcribe →
-  pick keyframes → write `prompt.md`). It's tested on Linux and kept as a reference; capture and
+- `prototype/`: the original Python prototype (package name `screen_prompt`), from before the
+  video-first design (it picked keyframes and wrote `prompt.md`). Kept as a reference; capture and
   UI there are incomplete.
 - `CLAUDE.md`: context and decisions for Claude Code sessions working in this repo.

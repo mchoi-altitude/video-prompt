@@ -2,7 +2,7 @@ import Foundation
 import VPCore
 import VPProcess
 
-// vp-process <id>: process recordings/<id>/raw and print the prompt.md path.
+// vp-process <id>: process recordings/<id>/raw and print the timeline.md path.
 let args = CommandLine.arguments.dropFirst()
 guard let id = args.first else {
     FileHandle.standardError.write(Data("usage: vp-process <recording-id>\n".utf8))

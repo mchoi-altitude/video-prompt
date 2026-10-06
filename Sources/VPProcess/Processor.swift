@@ -5,7 +5,7 @@ import VPMedia
 
 public enum ProcessorError: Error, Equatable { case noSegments, missing(String) }
 
-/// Turns `recordings/<id>/raw/` into frames, `manifest.json`, `prompt.md` and a `reviewing`
+/// Turns `recordings/<id>/raw/` into `video.mp4`, `overview.jpg`, `manifest.json`, `timeline.md` and a `reviewing`
 /// `meta.json`; `finalize` makes it `ready` once the user saves or sends it.
 /// On failure the raw folder is kept and the recording is marked `processingFailed`.
 public struct Processor: Sendable {
@@ -13,9 +13,21 @@ public struct Processor: Sendable {
     let paths: Paths
     let transcriber: Transcriber?
     let calendar: Calendar
+    /// Experiments only: keep `raw/` so the recording can be reprocessed differently.
+    let keepRaw: Bool
+    /// The `vp-frames` command named in timeline.md (the paste path has no MCP tools).
+    let vpFramesPath: String
 
-    public init(store: Store, paths: Paths, transcriber: Transcriber?, calendar: Calendar = .current) {
-        self.store = store; self.paths = paths; self.transcriber = transcriber; self.calendar = calendar
+    public init(store: Store, paths: Paths, transcriber: Transcriber?, calendar: Calendar = .current, keepRaw: Bool = false,
+                vpFramesPath: String = Processor.defaultVPFramesPath) {
+        self.store = store; self.paths = paths; self.transcriber = transcriber; self.calendar = calendar; self.keepRaw = keepRaw
+        self.vpFramesPath = vpFramesPath
+    }
+
+    /// `vp-frames` next to the running binary (inside the app bundle, or in .build for dev).
+    public static var defaultVPFramesPath: String {
+        let here = Bundle.main.executableURL?.deletingLastPathComponent() ?? URL(fileURLWithPath: "/Applications/Video Prompt.app/Contents/MacOS")
+        return here.appending(path: "vp-frames").path
     }
 
     public func process(id: String, now: Date = .now) async throws -> RecordingMeta {
@@ -51,27 +63,39 @@ public struct Processor: Sendable {
             durations[n] = byPosition[i + 1]
         }
         let offsets = segmentOffsets(durations: durations)
-        let duration = try await asset.load(.duration).seconds
+        let pauses = offsets.values.filter { $0 > 0 }.sorted().map(round2)
         guard let vt = try await asset.loadTracks(withMediaType: .video).first else { throw MediaError.noVideoTrack(id) }
         let natural = try await vt.load(.naturalSize)
         let sx = Double(natural.width) / session.display.w, sy = Double(natural.height) / session.display.h
 
         // Events → recording time.
         let events = try readEvents(raw.appending(path: "events.jsonl"))
-        var windows: [WindowSample] = [], cursorPts: [(t: Double, p: Point)] = [], clears: [Double] = []
+        var windows: [WindowSample] = [], clicksRaw: [(t: Double, p: Point)] = [], clears: [Double] = []
         var rawStrokes: [(t0: Double, t1: Double, points: [Point], tool: StrokeTool)] = []
         for e in events {
             switch e {
             case let .window(seg, t, frame, visible): if let o = offsets[seg] { windows.append(WindowSample(t: o + t, frame: frame, visible: visible)) }
-            case let .cursor(seg, t, p): if let o = offsets[seg] { cursorPts.append((o + t, p)) }
+            case .cursor: break  // the cursor is in the video itself
+            case let .click(seg, t, p): if let o = offsets[seg] { clicksRaw.append((o + t, p)) }
             case let .clear(seg, t): if let o = offsets[seg] { clears.append(round2(o + t)) }
             case let .stroke(seg, t0, t1, pts, tool): if let o = offsets[seg] { rawStrokes.append((o + t0, o + t1, pts, tool)) }
+            case let .undo(seg, t):
+                // Drop the latest stroke finished before the undo: it never meant anything.
+                if let o = offsets[seg], let i = rawStrokes.lastIndex(where: { $0.t1 <= o + t }) { rawStrokes.remove(at: i) }
             }
         }
         let timeline = CropTimeline(mode: session.mode, display: session.display, area: session.area, windowSamples: windows)
-        // Only the on-screen part of a window is in the video, so crop and map with that part.
-        func crop(at t: Double) -> Rect? { timeline.crop(at: t).flatMap { clip($0, to: session.display) } }
-        func dims(_ c: Rect) -> (w: Int, h: Int) { frameSize(cropW: c.w * sx, cropH: c.h * sy) }
+        let display = session.display
+        // Only the on-screen part of a window is in the capture, so crop and map with that part.
+        let crop: @Sendable (Double) -> Rect? = { t in timeline.crop(at: t).flatMap { clip($0, to: display) } }
+        // Canvas: the largest crop the recording ever had, in video pixels.
+        let crops = (windows.isEmpty ? [0.0] : windows.map(\.t)).compactMap(crop)
+        let canvas = (Int(((crops.map(\.w).max() ?? display.w) * sx).rounded()), Int(((crops.map(\.h).max() ?? display.h) * sy).rounded()))
+        /// A screen point → video pixels at time t (content sits top-left on the canvas).
+        func videoPixels(_ p: Point, at t: Double) -> [Int]? {
+            guard let c = crop(t) else { return nil }
+            return toFramePixels(p, crop: c, frameW: Int((c.w * sx).rounded()), frameH: Int((c.h * sy).rounded()))
+        }
 
         // Narration.
         var transcript: [Sentence] = []
@@ -80,44 +104,32 @@ public struct Processor: Sendable {
             transcript = sentences(from: try await transcriber.words(wav: wav))
         }
 
-        // Keyframes.
-        let scenes = try await sceneChanges(in: asset)
-        let picks = chooseFrameTimes(duration: duration, scenes: scenes, strokeEnds: rawStrokes.map(\.t1), sentences: transcript)
-        let framesDir = dir.appending(path: "frames")
-        try fm.createDirectory(at: framesDir, withIntermediateDirectories: true)
-        var frames: [ManifestFrame] = [], hidden: [Double] = []
-        for pick in picks {
-            guard let crop = crop(at: pick.time) else { hidden.append(pick.time); continue }
-            let index = frames.count + 1
-            let t = pick.time
-            let name = String(format: "frame_%02d_%02dm%04.1fs.jpg", index, Int(t / 60), t.truncatingRemainder(dividingBy: 60))
-            let img = try await grabFrame(asset, at: t, crop: crop, display: session.display)
-            let size = try writeJPEG(img, maxLongEdge: 1568, to: framesDir.appending(path: name))
-            let cur = cursor(at: t, in: cursorPts.map { CursorSample(t: $0.t, p: [Int($0.p.x.rounded()), Int($0.p.y.rounded())]) })
-                .flatMap { toFramePixels(Point(x: Double($0[0]), y: Double($0[1])), crop: crop, frameW: size.w, frameH: size.h) }
-            frames.append(ManifestFrame(index: index, time: t, reasons: pick.reasons, file: "frames/\(name)",
-                                        width: size.w, height: size.h, cursor: cur))
-        }
-
-        // Drawings, in the pixels of the frame they appear in.
+        let clicks = clicksRaw.compactMap { c in videoPixels(c.p, at: c.t).map { ManifestClick(t: round2(c.t), x: $0[0], y: $0[1]) } }
         var strokes: [ManifestStroke] = []
         for s in rawStrokes {
-            guard let crop = crop(at: s.t1) else { continue }
-            let d = dims(crop)
-            let px = s.points.compactMap { toFramePixels($0, crop: crop, frameW: d.w, frameH: d.h) }
+            let px = s.points.compactMap { videoPixels($0, at: s.t1) }
             guard px.count >= 2 else { continue }
             let (bbox, text) = describeStroke(px, tool: s.tool)
-            strokes.append(ManifestStroke(start: round2(s.t0), end: round2(s.t1), tool: s.tool, bbox: bbox, description: text,
-                                          frameIndex: frames.first { $0.time >= s.t1 }?.index))
+            strokes.append(ManifestStroke(start: round2(s.t0), end: round2(s.t1), tool: s.tool, bbox: bbox, description: text))
         }
+        let hidden = windows.filter { !$0.visible }.map { round2($0.t) }
 
-        let manifest = Manifest(id: id, duration: round2(duration), mode: session.mode, transcript: transcript, frames: frames,
-                                strokes: strokes,
-                                timeline: buildTimeline(frames: frames, transcript: transcript, strokes: strokes, clears: clears, hidden: hidden),
+        // The window video, then its overview.
+        let rendered = try await renderWindowVideo(asset: asset, display: display, canvas: canvas, crop: crop,
+                                                   clicks: clicks.map { ClickMark(t: $0.t, x: Double($0.x), y: Double($0.y)) },
+                                                   to: dir.appending(path: "video.mp4"))
+        let overview = try await makeOverview(video: dir.appending(path: "video.mp4"), to: dir.appending(path: "overview.jpg"))
+
+        let manifest = Manifest(id: id, duration: round2(rendered.duration), mode: session.mode, transcript: transcript,
+                                video: VideoInfo(file: "video.mp4", width: rendered.width, height: rendered.height, fps: VideoFPS,
+                                                 hasAudio: rendered.hasAudio),
+                                overview: "overview.jpg", overviewSecondsPerTile: overview.secondsPerTile, strokes: strokes, clicks: clicks,
+                                timeline: buildTimeline(transcript: transcript, strokes: strokes, clicks: clicks, clears: clears,
+                                                        hidden: hidden, pauses: pauses),
                                 note: session.note)
         try writeJSON(manifest, to: dir.appending(path: "manifest.json"))
-        try writeAtomically(Data(renderPrompt(manifest, recordingDir: dir).utf8), to: dir.appending(path: "prompt.md"))
-        try fm.removeItem(at: raw)
+        try writeAtomically(Data(renderTimeline(manifest, recordingDir: dir, vpFrames: vpFramesPath).utf8), to: dir.appending(path: "timeline.md"))
+        if !keepRaw { try fm.removeItem(at: raw) }
 
         var out = meta
         out.status = .reviewing

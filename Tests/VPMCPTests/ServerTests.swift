@@ -10,19 +10,8 @@ private func server(_ paths: Paths, poll: Duration = .milliseconds(10)) -> MCPSe
     MCPServer(store: Store(paths: paths), waiters: Waiters(paths: paths), pid: myPID, cwd: "/proj", pollInterval: poll)
 }
 
-/// A ready recording with prompt.md and two tiny frame files.
-private func addReady(_ paths: Paths, id: String, deliveredTo: Int32? = nil, at: Date = .now) throws {
-    let dir = paths.recording(id)
-    try FileManager.default.createDirectory(at: dir.appending(path: "frames"), withIntermediateDirectories: true)
-    let frames = [ManifestFrame(index: 1, time: 0.5, reasons: ["start"], file: "frames/a.jpg", width: 2, height: 2),
-                  ManifestFrame(index: 2, time: 3, reasons: ["end"], file: "frames/b.jpg", width: 2, height: 2)]
-    for f in frames { try Data([0xFF, 0xD8, 0xFF]).write(to: dir.appending(path: f.file)) }
-    let m = Manifest(id: id, duration: 3, mode: .window, transcript: [], frames: frames, strokes: [],
-                     timeline: buildTimeline(frames: frames, transcript: [], strokes: [], clears: [], hidden: []))
-    try writeJSON(m, to: dir.appending(path: "manifest.json"))
-    try Data(renderPrompt(m, recordingDir: dir).utf8).write(to: dir.appending(path: "prompt.md"))
-    try writeJSON(RecordingMeta(id: id, title: "Save button", createdAt: at, duration: 3, mode: .window, status: .ready,
-                                deliveredToPID: deliveredTo), to: dir.appending(path: "meta.json"))
+private func addReady(_ p: Paths, id: String, deliveredTo: Int32? = nil, at: Date = .now) throws {
+    try makeProcessedRecording(p, id: id, status: .ready, deliveredTo: deliveredTo, createdAt: at)
 }
 
 private func call(_ s: MCPServer, _ json: String) async throws -> [String: Any] {
@@ -52,21 +41,21 @@ private func content(_ r: [String: Any]) -> [[String: Any]] {
     #expect((r["result"] as? [String: Any])?["protocolVersion"] as? String == "2025-06-18")
 }
 
-@Test func toolsListHasFourTools() async throws {
+@Test func toolsListHasFiveTools() async throws {
     let r = try await call(server(Paths(root: tempDir())), #"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#)
     let names = ((r["result"] as? [String: Any])?["tools"] as? [[String: Any]])?.compactMap { $0["name"] as? String }
-    #expect(Set(names ?? []) == ["get_latest_recording", "list_recordings", "get_recording", "wait_for_next_recording"])
+    #expect(Set(names ?? []) == ["get_latest_recording", "list_recordings", "get_recording", "get_frames", "wait_for_next_recording"])
 }
 
-@Test func latestReturnsTextThenImages() async throws {
+@Test func latestReturnsTimelineAndOverview() async throws {
     let p = Paths(root: tempDir())
     try addReady(p, id: "r1")
     let r = try await call(server(p), toolCall("get_latest_recording"))
     let c = content(r)
-    #expect(c.map { $0["type"] as? String } == ["text", "image", "image"])
+    #expect(c.map { $0["type"] as? String } == ["text", "image"])
     #expect((c[0]["text"] as? String)?.hasPrefix("# Screen recording") == true)
+    #expect((c[0]["text"] as? String)?.contains("get_frames") == true)
     #expect(c[1]["mimeType"] as? String == "image/jpeg")
-    #expect(c[1]["data"] as? String == Data([0xFF, 0xD8, 0xFF]).base64EncodedString())
     #expect(try Store(paths: p).meta("r1").fetchedByCwd == "/proj")
 }
 
@@ -95,7 +84,7 @@ private func content(_ r: [String: Any]) -> [[String: Any]] {
     #expect(Waiters(paths: p).live(isAlive: { _ in true }).map(\.pid) == [myPID])
     try addReady(p, id: "sent", deliveredTo: myPID)
     let c = content(try await reply)
-    #expect(c.map { $0["type"] as? String } == ["text", "image", "image"])
+    #expect(c.map { $0["type"] as? String } == ["text", "image"])
     #expect(Waiters(paths: p).live(isAlive: { _ in true }).isEmpty)
 }
 
@@ -196,13 +185,6 @@ actor Collector {
     #expect(try readJSON(RecordingMeta.self, from: p.root.appending(path: "evil/meta.json")).fetchedByCwd == nil)
 }
 
-@Test func mcpPromptSaysFramesAreAttached() async throws {
-    let p = Paths(root: tempDir())
-    try addReady(p, id: "r1")
-    let text = content(try await call(server(p), toolCall("get_latest_recording"))).first?["text"] as? String ?? ""
-    #expect(text.contains("attached"))
-    #expect(!text.contains("Read tool"))
-}
 
 @Test func smallRecordingsAttachEverythingFullSize() {
     let p = Tools.attachmentPlan(sizes: Array(repeating: (1568, 980), count: 6), budgetTokens: 20000)
@@ -217,21 +199,64 @@ actor Collector {
     #expect(p.inline.first == 0 && p.inline.last == 23)  // first and last frame always attached
 }
 
-@Test func overBudgetFramesAreListedForRead() async throws {
+
+private func addWithVideo(_ p: Paths, id: String, seconds: Double = 4) async throws {
+    let v = tempDir().appending(path: "v.mov")
+    try await makeColorVideo(url: v, size: (320, 200), blocks: [ColorBlock(seconds / 2, (240, 240, 240)), ColorBlock(seconds / 2, (20, 20, 20))])
+    try makeProcessedRecording(p, id: id, status: .ready, video: v)
+}
+
+private func images(_ c: [[String: Any]]) -> Int { c.filter { $0["type"] as? String == "image" }.count }
+
+@Test func getFramesReturnsLabelledImages() async throws {
     let p = Paths(root: tempDir())
-    let id = "r5", dir = p.recording(id)
-    try FileManager.default.createDirectory(at: dir.appending(path: "frames"), withIntermediateDirectories: true)
-    let frames = (1...5).map { ManifestFrame(index: $0, time: Double($0), reasons: ["narration"], file: "frames/f\($0).jpg", width: 2, height: 2) }
-    for f in frames { try Data([0xFF, 0xD8, 0xFF]).write(to: dir.appending(path: f.file)) }
-    try writeJSON(Manifest(id: id, duration: 6, mode: .window, transcript: [], frames: frames, strokes: [],
-                           timeline: buildTimeline(frames: frames, transcript: [], strokes: [], clears: [], hidden: [])),
-                  to: dir.appending(path: "manifest.json"))
-    try writeJSON(RecordingMeta(id: id, title: "t", createdAt: .now, duration: 6, mode: .window, status: .ready), to: dir.appending(path: "meta.json"))
-    let s = MCPServer(store: Store(paths: p), waiters: Waiters(paths: p), pid: myPID, cwd: "/proj", imageBudgetTokens: 0)
-    let c = content(try await call(s, toolCall("get_latest_recording")))
-    #expect(c.filter { $0["type"] as? String == "image" }.count == 2)  // first and last are always sent
-    let text = c.first?["text"] as? String ?? ""
-    #expect(text.contains("Frames not attached"))
-    #expect(text.contains(dir.appending(path: "frames/f3.jpg").path))
-    #expect(!text.contains(dir.appending(path: "frames/f5.jpg").path))
+    try await addWithVideo(p, id: "r1")
+    let c = content(try await call(server(p), toolCall("get_frames", #"{"id":"r1","from":1,"to":2,"fps":2}"#)))
+    #expect(images(c) == 3)
+    let texts = c.compactMap { $0["text"] as? String }.joined(separator: "\n")
+    #expect(texts.contains("1.0 s") && texts.contains("1.5 s") && texts.contains("2.0 s"))
+}
+
+@Test func getFramesDefaultsToLatest() async throws {
+    let p = Paths(root: tempDir())
+    try await addWithVideo(p, id: "r1")
+    let c = content(try await call(server(p), toolCall("get_frames", #"{"from":0,"to":0}"#)))
+    #expect(images(c) == 1)
+}
+
+@Test func getFramesCapsAtTwenty() async throws {
+    let p = Paths(root: tempDir())
+    try await addWithVideo(p, id: "r1")
+    let c = content(try await call(server(p), toolCall("get_frames", #"{"from":0,"to":3.9,"fps":10}"#)))
+    #expect(images(c) <= 20 && images(c) >= 10)
+}
+
+@Test func getFramesRespectsBudget() async throws {
+    let p = Paths(root: tempDir())
+    try await addWithVideo(p, id: "r1")
+    let s = MCPServer(store: Store(paths: p), waiters: Waiters(paths: p), pid: 4242, cwd: "/proj", imageBudgetTokens: 0)
+    let c = content(try await call(s, toolCall("get_frames", #"{"from":0,"to":3,"fps":2}"#)))
+    #expect(images(c) == 2)   // first and last only; the rest are named so Claude can ask again
+    #expect(c.compactMap { $0["text"] as? String }.joined().contains("narrower range"))
+}
+
+@Test func getFramesUnknownIdIsError() async throws {
+    let r = try await call(server(Paths(root: tempDir())), toolCall("get_frames", #"{"id":"nope","from":0,"to":1}"#))
+    #expect((r["result"] as? [String: Any])?["isError"] as? Bool == true)
+}
+
+@Test func getFramesWholeRangeSpreadsAcrossVideo() async throws {
+    let p = Paths(root: tempDir())
+    try await addWithVideo(p, id: "r1", seconds: 12)
+    let c = content(try await call(server(p), toolCall("get_frames", #"{"from":0,"to":9999}"#)))
+    #expect(images(c) >= 10)
+    let header = c.first?["text"] as? String ?? ""
+    #expect(header.contains("to 12.0 s") || header.contains("to 11.9 s"))
+}
+
+@Test func latestDescriptionMentionsOverviewNotKeyframes() async throws {
+    let r = try await call(server(Paths(root: tempDir())), #"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#)
+    let tools = (r["result"] as? [String: Any])?["tools"] as? [[String: Any]] ?? []
+    let d = tools.first { $0["name"] as? String == "get_latest_recording" }?["description"] as? String ?? ""
+    #expect(!d.contains("keyframe") && d.contains("get_frames"))
 }

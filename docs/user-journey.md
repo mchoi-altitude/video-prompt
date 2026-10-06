@@ -1,6 +1,8 @@
 # User journey (draft)
 
-Status: **draft for discussion.** Items marked **❓ Decide** are open questions; the
+Status: **decided — see [the v1 design spec](superpowers/specs/2026-10-06-video-prompt-design.md)**, which supersedes the open questions below. Original draft kept for history.
+
+Was: **draft for discussion.** Items marked **❓ Decide** are open questions; the
 **Proposal** under each is a starting point, not a decision.
 
 ## Who and why

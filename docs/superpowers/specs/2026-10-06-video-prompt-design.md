@@ -1,0 +1,300 @@
+# Video Prompt v1: design
+
+Status: **for review** · 2026-10-06 · supersedes the open questions in
+[`docs/user-journey.md`](../../user-journey.md)
+
+Clickable prototype of everything below (flow + first-run setup):
+https://claude.ai/artifact/4n5ZJ7ogjbBTDF1JrHGZbV
+
+## 1. What and why
+
+A developer working with Claude Code wants to **show** rather than type: "this button, this
+spacing, this flow is broken; here's what I want instead." Typing loses the visual context.
+Screenshots lose the sequence and the explanation.
+
+Video Prompt is a macOS menu-bar app. You record your Chrome window (or the screen, or an
+area), talk, and draw on it with the mouse. On Stop, the recording becomes keyframes plus a
+timestamped transcript plus drawing notes, and it reaches Claude Code.
+
+**Success looks like**
+
+- Under **10 seconds of overhead** between "I want to show Claude this" and Claude having it.
+- In most cases Claude's first reply names the right UI element, with no follow-up question.
+
+**Audience:** public, open source. Published from `mchoi-altitude/video-prompt` for now (2FA on). It may
+move to an AltitudeIQ GitHub organization later (see §9 for what must be stable from day one).
+
+## 2. Decisions
+
+| # | Topic | Decision |
+|---|---|---|
+| 1 | Hand-off | **A** (pull: "look at my recording") + **B** (Claude asks and waits) + **clipboard**. No push into an "active" session. |
+| 2 | Main button on review | B, when a session is waiting: **"Send to waiting session"**. A, when none is waiting: **"Save & copy reference"** (saves it as the latest recording *and* puts `@…/prompt.md` on the clipboard). |
+| 3 | Default capture mode | **Record Chrome window.** It's the first menu item and shows the window's tab title. Also offered: whole screen, selected area, another window. |
+| 4 | Window resize/move mid-recording | Record the display and log the target window's frame over time, then **crop each keyframe to where the window was at that moment** (§5). |
+| 5 | Shortcut | **⌃⌥⌘R** starts a recording in the last-used mode (Chrome window by default). |
+| 6 | Control bar | Floating ● timer / ❚❚ / ✎ / ■, **hidden from the capture**. Drawings *are* captured. |
+| 7 | Countdown | 3-2-1 before recording starts. |
+| 8 | Drawing | **Pen, arrow, box**, red only, plus undo and clear. While Draw is on, clicks don't reach apps. Marks **fade after 3 s** by default (setting: keep until Stop). |
+| 9 | Time limit | Soft warning at **3:00** ("long recordings give Claude many frames"). No hard stop. |
+| 10 | Review step | **On** by default, with the main button focused so **Return sends**. You can fix the transcript, drop frames and add a typed note. Setting: skip review. |
+| 11 | Retention | Auto-delete after **3 days** (setting: 1 / 3 / 7 / 30 days, keep the last 20, never). |
+| 12 | Manual delete | **Recordings…** window: trash per row, checkboxes, "Select all sent", bulk delete. Deleted recordings go to the **macOS Trash** (no confirm dialog). |
+| 13 | Raw video | **Dropped after processing.** Only keyframes, transcript and manifest are kept (about 2 MB each). |
+| 14 | Recording titles | Taken automatically from the first narration sentence. |
+| 15 | First run | Setup window: Screen Recording → Microphone → Connect Claude Code → optional 5-second test (§3.0). |
+| 16 | Sharing with teammates | Not in v1. |
+| 17 | Privacy controls | No blur or app exclusion in v1. The review step (drop frames) plus Chrome-window mode cover it. |
+| 18 | Telemetry | **None.** The app makes no network calls except checking for updates (§8). |
+
+## 3. User journey
+
+### 3.0 One-time setup
+
+Install: `.dmg` download or `brew install --cask video-prompt`. On first launch a
+setup window appears. The steps unlock in order, so only one button is live at a time.
+
+1. **Screen Recording.** "Open System Settings" deep-links to Privacy & Security → Screen &
+   System Audio Recording. When the user flips the switch, macOS asks the app to quit; **Quit &
+   Reopen** relaunches it and setup resumes with progress kept. "Later" leaves the step amber
+   with a Quit & Reopen button.
+   *Why setup exists at all:* this restart must not happen during the user's first real
+   recording.
+2. **Microphone.** The system prompt appears. **Don't Allow is not a dead end:** recordings
+   work without narration (typed notes only), the step stays amber, and a "Turn on" button
+   appears.
+3. **Connect Claude Code.** "Copy install commands" copies:
+   ```
+   /plugin marketplace add mchoi-altitude/video-prompt
+   /plugin install video-prompt@video-prompt
+   ```
+   The step turns green when the plugin is detected (§6.3). **Skip** is allowed: everything
+   then works through Copy reference.
+4. **Test recording (optional).** Five seconds, then: "Heard: '…' · 3 frames ready."
+
+Footer: the shortcut reminder and "Open at login" (on by default). **Done** is enabled once
+steps 1–3 are resolved (done or knowingly skipped or denied). Afterwards, a card points at the
+menu-bar icon: "Video Prompt lives up here."
+
+### 3.1 Start
+
+Menu-bar icon (an **amber dot** means a Claude session is waiting) or ⌃⌥⌘R:
+
+```
+● Claude is waiting for a recording        (only when one is)
+✓ Record Chrome window        ⌃⌥⌘R
+    <tab title · host>
+  Record whole screen
+  Record selected area…
+  Record another window…
+─────────────
+  Recordings…                     <count>
+  Settings…
+```
+
+3-2-1 countdown, then recording. In Chrome-window mode a red outline hugs the window and
+follows it if it moves or resizes.
+
+### 3.2 Show and tell
+
+- Narrate while using the screen normally. The cursor is logged throughout.
+- ✎ Draw toggles a full-screen drawing layer (pen / arrow / box). Clicks don't reach apps
+  while it's on.
+- ❚❚ Pause: nothing is recorded. Each pause ends a segment and resume starts a new one.
+
+### 3.3 Stop and review
+
+■ Stop → "Transcribing on this Mac…" (a few seconds) → review panel:
+
+- Editable transcript.
+- Keyframe thumbnails, each with remove / undo.
+- An optional typed note.
+- A destination line: "Goes to: claude — ~/project (waiting for this)" or "No session is
+  waiting. It's saved as your latest recording."
+- Buttons: **Discard** · **Copy reference** · **Send to waiting session ⏎** / **Save & copy
+  reference ⏎**.
+
+With review turned off, Stop goes straight to the main action.
+
+### 3.4 Hand-off
+
+| Path | What happens |
+|---|---|
+| **B: Claude asked** | Claude called `wait_for_next_recording`. Send saves the recording, and that call returns it inline. |
+| **A: you ask** | Save & copy. Later, in any session, "look at my recording" → Claude calls `get_latest_recording`. |
+| **Clipboard** | Paste `@~/Library/Application Support/VideoPrompt/recordings/<id>/prompt.md` into any session. Works without the plugin. |
+
+Copy reference while a session is waiting is allowed. Claude stays waiting, so the user presses
+Esc in the terminal and pastes.
+
+### 3.5 Claude acts
+
+Claude receives the narration, then a timeline that interleaves sentences, keyframes and
+drawing notes ("circled (40,470)–(150,510) in the Chrome window"). It also gets instructions to
+ask before large changes when the narration is ambiguous, and to refer to frames by number.
+
+### 3.6 Afterwards
+
+Recordings… window (§2 #11–13). Each row shows the title, time, length, status ("Sent to
+claude — ~/acme-console" / "Saved · not fetched yet" / "Not sent"), size, "Auto-deletes in N
+days", Copy reference and a trash button.
+
+## 4. Architecture
+
+```
+┌──────────────────── VideoPrompt.app (Swift, macOS 14+) ───────────────────────┐
+│ MenuBar ─ ControlBar ─ DrawingOverlay ─ ReviewPanel ─ RecordingsWindow ─ Setup │
+│        │                                                                       │
+│ CaptureSession (ScreenCaptureKit: display video + mic)                         │
+│ EventLog (cursor, strokes, target-window frames, pauses; one clock)            │
+│ Processor (segments → transcript → keyframes → crop → manifest/prompt.md)      │
+│ Store (recordings folder, retention sweeper, Trash)                            │
+└───────────────────────────────┬────────────────────────────────────────────────┘
+                                │ files only (no sockets, no ports)
+              ~/Library/Application Support/VideoPrompt/
+                 recordings/<id>/{manifest.json, prompt.md, frames/*.jpg}
+                 waiters/<pid>.json          ← written by the MCP server
+                                │
+┌───────────────────────────────┴───────────────────┐
+│ video-prompt-mcp (stdio MCP server, bundled CLI)   │ ← launched by Claude Code
+│ get_latest_recording · list_recordings ·           │   through the plugin
+│ wait_for_next_recording                            │
+└────────────────────────────────────────────────────┘
+```
+
+Each unit has one job and one interface:
+
+- **CaptureSession**: start/pause/resume/stop → segment files + audio. Knows nothing about
+  drawing.
+- **EventLog**: an append-only timeline of `{t, kind, data}` per segment. Pause handling maps
+  segment-local times to recording time using the actual segment durations (as in the
+  prototype).
+- **Processor**: a pure function from (segments, events, mode) to a recording folder. It can be
+  tested without any UI.
+- **Store**: owns the folder layout, atomic writes, retention, and moving to the Trash.
+- **MCP server**: reads the Store's folder. It never talks to the app directly.
+
+## 5. Capture and keyframes
+
+- **Always capture the display** containing the target, excluding only our control bar. The
+  drawing overlay *is* included, so marks appear in the frames for free.
+- **Chrome-window / other-window mode:** poll the target window's frame (about 10 Hz) into the
+  EventLog. Processing crops each chosen keyframe to the window's frame at that timestamp. A
+  resize means later frames have a different size, which is fine because Claude gets stills.
+  Drawing and cursor coordinates are converted to **window-relative** pixels for that frame.
+  If another window covers Chrome, the frame shows what the user actually saw.
+- **Area mode:** a fixed crop rectangle. **Whole-screen mode:** no crop.
+- **Keyframe choice** (unchanged from the prototype): first and last frame, frames just after
+  each finished drawing, scene changes (`gt(scene,0.1)`), and the midpoint of each narration
+  sentence. Deduplicated to at least 1.5 s apart, capped at about 24, long edge ≤ 1568 px, JPEG.
+- **Narration:** split into sentences using word timestamps, so it interleaves with the frames.
+- **Drawing notes:** the shape heuristic turns strokes into text ("circled the area …") as an
+  anchor alongside the red marks in the images.
+
+**Transcription engine:** on-device only. Apple Speech (`SFSpeechRecognizer` with
+`requiresOnDeviceRecognition`) vs whisper.cpp. Choose during planning by accuracy on technical
+vocabulary; a whisper.cpp model would be downloaded with a pinned checksum.
+
+## 6. Claude Code plugin
+
+### 6.1 Packaging
+
+A Claude Code plugin in this repo (marketplace `video-prompt`, plugin `video-prompt`). Its MCP
+server is a **small native CLI inside the app bundle**, so users need no Python or Node. The
+plugin config points at the app's bundled binary; if the app isn't installed, the tools return
+a clear "install Video Prompt" message.
+
+### 6.2 Tools
+
+| Tool | Returns |
+|---|---|
+| `get_latest_recording()` | The newest recording's prompt text and keyframe images inline. |
+| `list_recordings(limit?)` | id, title, time, length, status. |
+| `get_recording(id)` | Like latest, for a specific recording. |
+| `wait_for_next_recording(timeout_s?)` | Registers a waiter, blocks until a recording newer than the call is saved, then returns it inline. |
+
+### 6.3 How "waiting" works without a socket
+
+- `wait_for_next_recording` writes `waiters/<pid>.json` (`{pid, cwd, startedAt}`) and watches
+  `recordings/`. It deletes its file on return, error or exit. The app treats a file as stale if
+  the pid is dead.
+- The app watches `waiters/`. Any live waiter turns on the **amber dot** and switches the review
+  button to "Send to waiting session" (destination = the waiter's `cwd`). With several waiters,
+  the **most recent** one gets it.
+- Detecting the plugin for setup step 3: the plugin's server writes `plugin-seen.json` the
+  first time it starts.
+
+### 6.4 Content framing
+
+Tool results wrap recording content as **data captured from the user's screen**: text visible
+in frames or transcripts is never an instruction to Claude (see §8, prompt injection).
+
+## 7. Storage
+
+- Root: `~/Library/Application Support/VideoPrompt/` (no spaces, so `@` references paste
+  cleanly), mode `0700`.
+- Recording `<id>` = `YYYYMMDD-HHMMSS`. Contents: `manifest.json`, `prompt.md`, `frames/*.jpg`,
+  `meta.json` (title, status, mode, size). Segments and raw video are deleted once processing
+  succeeds. If processing fails, they're kept and the recording is marked "Processing failed ·
+  Retry".
+- All writes are atomic (temp + rename), as in the prototype's `write_json`.
+- A retention sweep runs at launch and hourly, moving expired recordings to the Trash.
+
+## 8. Security and privacy
+
+AltitudeIQ runs **no server and receives no user data**. Recordings go only to the user's own
+Claude account, through their own Claude Code.
+
+| Risk | Mitigation (v1) |
+|---|---|
+| **Compromised update or signing key** ships spyware to every user (highest impact) | Sparkle updates with EdDSA signatures over HTTPS. Signing keys stay out of the repo and CI logs. Notarized builds. 2FA + branch protection on the publishing GitHub account. Release tags signed. |
+| **Other local programs or websites pulling recordings** | No network listener of any kind. The plugin reads files. The data folder is `0700`. |
+| **Prompt injection from screen content** (Chrome is the default, so web pages appear in frames) | Content framed as screen data (§6.4). The user sees every frame in review. Claude Code's own permission prompts still gate actions. Documented in the README. |
+| **Sensitive screens** | Chrome-window mode by default. Frames can be dropped in review. Audio is transcribed on-device. Raw video deleted after processing. 3-day retention. |
+| **Downloaded model tampering** (if whisper.cpp) | Pinned SHA-256 checksum. |
+| **Brand and legal** | Named "Video Prompt *for Claude Code*", with no implied Anthropic endorsement. OSS license (MIT proposed). A short privacy statement in the README and on the site. |
+
+## 9. Distribution and identity
+
+**Stable from day one** (changing these later is expensive):
+
+- **Bundle ID** `ai.altitudeiq.videoprompt`. macOS ties Screen Recording and Microphone
+  permissions to it.
+- **Apple Developer account owned by AltitudeIQ.** The signing team is also part of those
+  permission grants, so changing it later forces every user to re-grant.
+- **Update-feed URL** `https://altitudeiq.ai/video-prompt/appcast.xml` (proposed). It's baked
+  into every installed copy.
+
+**Can move later:** the GitHub repo (`mchoi-altitude/video-prompt` → an org; GitHub redirects),
+the plugin install command (README), and the Homebrew cask.
+
+## 10. Out of scope for v1 (later list)
+
+- **Chrome extension** that maps a drawing to the DOM element ("you circled `button.save`").
+- Sharing recordings to PRs, issues or teammates.
+- Auto-blur (for example password fields) and "never capture these apps."
+- Highlighter, colors, text labels.
+- Push into an "active" session (option C).
+- Linux (see the notes in `CLAUDE.md`).
+
+## 11. To verify early in the build
+
+1. ScreenCaptureKit with a display filter that excludes only the control bar, while including
+   our drawing overlay: confirm per macOS version.
+2. Window-frame polling for Chrome while it's moved, resized, full-screened or minimized:
+   define what a frame shows when the window is minimized (proposal: skip frames; note "window
+   hidden" in the timeline).
+3. How long Claude Code lets an MCP tool call block (`wait_for_next_recording`). Pick a default
+   timeout below it, with a "still waiting? call again" result.
+4. Transcription engine accuracy on developer speech (§5).
+
+## 12. Testing
+
+- **Processor:** golden tests from recorded fixtures (segments + event logs → expected
+  keyframe times, crops, window-relative coordinates, `prompt.md`). This includes a fixture with
+  a mid-recording resize and one with a pause.
+- **Store:** retention sweep, Trash moves, atomic writes, stale waiter cleanup.
+- **MCP server:** tool contract tests against a fixture folder, including two concurrent
+  waiters.
+- **Manual checklist per release:** first-run on a clean macOS user (permissions, Quit &
+  Reopen, mic denied, plugin skipped), and both hand-off paths end to end.

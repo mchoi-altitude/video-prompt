@@ -16,7 +16,10 @@ handed to a Claude Code session.
     would inherit the terminal's).
   - Distribute as a signed and notarized `.dmg` and/or Homebrew cask (needs an Apple Developer
     account).
-- **User journey before code.** Agree on `docs/user-journey.md` before writing the app.
+- **User journey decided (2026-10-06).** The source of truth is
+  `docs/superpowers/specs/2026-10-06-video-prompt-design.md` (clickable prototype linked there).
+  Public open-source release, bundle ID `ai.altitudeiq.videoprompt`, AltitudeIQ-owned Apple
+  Developer account.
 - **Linux later, maybe.** A Python/Qt + xdg-desktop-portal prototype was started; see "Linux
   notes" below.
 

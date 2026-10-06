@@ -16,7 +16,7 @@ private func processed() throws -> (Paths, Store, String) {
     let m = Manifest(id: id, duration: 12, mode: .window, transcript: transcript, frames: frames, strokes: [],
                      timeline: buildTimeline(frames: frames, transcript: transcript, strokes: [], clears: [], hidden: []))
     try writeJSON(m, to: dir.appending(path: "manifest.json"))
-    try writeJSON(RecordingMeta(id: id, title: "x", createdAt: .now, duration: 12, mode: .window, status: .ready),
+    try writeJSON(RecordingMeta(id: id, title: "x", createdAt: .now, duration: 12, mode: .window, status: .reviewing),
                   to: dir.appending(path: "meta.json"))
     return (paths, store, id)
 }
@@ -50,4 +50,22 @@ private func processed() throws -> (Paths, Store, String) {
     let (paths, store, id) = try processed()
     let url = try finalize(id: id, edits: ReviewEdits(note: "Same on Billing."), store: store, paths: paths)
     #expect(try String(contentsOf: url, encoding: .utf8).contains("## Typed note\n\nSame on Billing."))
+}
+
+@Test func finalizeMarksReady() throws {
+    let (paths, store, id) = try processed()
+    #expect(store.latestReady() == nil)
+    try finalize(id: id, edits: ReviewEdits(), store: store, paths: paths)
+    #expect(try store.meta(id).status == .ready)
+    #expect(store.latestReady()?.id == id)
+}
+
+@Test func finalizeDeliversToWaiterAndRearmsFetch() throws {
+    let (paths, store, id) = try processed()
+    try store.update(id) { $0.fetchedByCwd = "/other" }  // fetched earlier by another session
+    try finalize(id: id, edits: ReviewEdits(), store: store, paths: paths, deliverTo: Waiter(pid: 77, cwd: "/proj", startedAt: .now))
+    let m = try store.meta(id)
+    #expect(m.deliveredToPID == 77)
+    #expect(m.deliveredToCwd == "/proj")
+    #expect(m.fetchedByCwd == nil)
 }

@@ -5,7 +5,8 @@ import VPMedia
 
 public enum ProcessorError: Error, Equatable { case noSegments, missing(String) }
 
-/// Turns `recordings/<id>/raw/` into frames, `manifest.json`, `prompt.md` and a ready `meta.json`.
+/// Turns `recordings/<id>/raw/` into frames, `manifest.json`, `prompt.md` and a `reviewing`
+/// `meta.json`; `finalize` makes it `ready` once the user saves or sends it.
 /// On failure the raw folder is kept and the recording is marked `processingFailed`.
 public struct Processor: Sendable {
     let store: Store
@@ -111,7 +112,7 @@ public struct Processor: Sendable {
         try fm.removeItem(at: raw)
 
         var out = meta
-        out.status = .ready
+        out.status = .reviewing
         out.duration = manifest.duration
         out.title = title(for: transcript, createdAt: meta.createdAt, calendar: calendar)
         out.sizeBytes = folderSize(dir)

@@ -159,7 +159,9 @@ public struct Manifest: Codable, Sendable, Equatable {
     }
 }
 
-public enum RecordingStatus: String, Codable, Sendable { case processing, ready, processingFailed }
+/// processing → reviewing (frames and prompt exist; the user hasn't saved or sent yet) → ready.
+/// Only `ready` recordings are visible to Claude.
+public enum RecordingStatus: String, Codable, Sendable { case processing, reviewing, ready, processingFailed }
 
 /// `meta.json`, written last: a recording folder without it doesn't exist yet for readers.
 public struct RecordingMeta: Codable, Sendable, Equatable {

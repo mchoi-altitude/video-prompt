@@ -37,6 +37,7 @@ private let now = ISO8601DateFormatter().date(from: "2026-10-06T14:14:02Z")!
     let p = tempPaths()
     try addRecording(p, id: "done", daysAgo: 1, now: now)
     try addRecording(p, id: "busy", daysAgo: 0, now: now, status: .processing)
+    try addRecording(p, id: "inReview", daysAgo: 0, now: now, status: .reviewing)
     #expect(Store(paths: p).latestReady()?.id == "done")
 }
 

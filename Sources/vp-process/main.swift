@@ -10,9 +10,11 @@ guard let id = args.first else {
 }
 let paths = Paths.default()
 do {
-    _ = try await Processor(store: Store(paths: paths), paths: paths,
+    let store = Store(paths: paths)
+    _ = try await Processor(store: store, paths: paths,
                             transcriber: WhisperCLITranscriber.fromEnvironment(paths: paths)).process(id: id)
-    print(paths.recording(id).appending(path: "prompt.md").path)
+    // No review panel here: save it as-is so Claude can fetch it.
+    print(try finalize(id: id, edits: ReviewEdits(), store: store, paths: paths).path)
 } catch {
     FileHandle.standardError.write(Data("vp-process: \(error)\n".utf8))
     exit(1)

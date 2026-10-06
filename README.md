@@ -24,6 +24,8 @@ Uninstall: quit the app, then `rm -rf "/Applications/Video Prompt.app" ~/Library
 
 Publishing a beta (maintainers): `scripts/release-beta.sh` (or `--dry-run` to build only).
 
+Known issues and deferred fixes: [`docs/known-issues.md`](docs/known-issues.md).
+
 ## Developing
 
 Needs macOS 14+ and Swift 6.3 (the Command Line Tools are enough for the core; the app will need

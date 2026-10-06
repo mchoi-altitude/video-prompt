@@ -23,7 +23,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var makeProcessor: @Sendable () -> Processor = { [paths, store] in
         Processor(store: store, paths: paths, transcriber: WhisperCLITranscriber.fromEnvironment(paths: paths))
     }
-    private lazy var controller = RecordingController(paths: paths, store: store, capture: ScreenCaptureBackend(),
+    private let capture = ScreenCaptureBackend()
+    private lazy var controller = RecordingController(paths: paths, store: store, capture: capture,
                                                       clock: { ProcessInfo.processInfo.systemUptime },
                                                       makeProcessor: makeProcessor, settings: settings)
     private lazy var lifecycle = Lifecycle(store: store, settings: settings, makeProcessor: makeProcessor)
@@ -55,6 +56,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if MenuBusy(self.controller.state) == .recording { self.stop() } else { self.startLastMode() }
         }
         controller.excludedWindowIDs = { [unowned self] in [controlBar.windowID] }
+        // The system ended capture (menu-bar indicator, display unplugged, sleep): keep what was
+        // recorded and move on to processing, rather than sitting in "recording".
+        capture.onUnexpectedStop = { [weak self] message in
+            guard let self else { return }
+            toast.show(message, seconds: 6)
+            Task { await self.controller.stop() }
+        }
         overlay.onStroke = { [unowned self] s in
             controller.log(.stroke(startHost: s.startHost, points: s.points, tool: s.tool), hostTime: s.endHost ?? s.startHost)
         }

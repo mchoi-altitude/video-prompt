@@ -11,8 +11,8 @@ VIDEO_PROMPT_MCP="$PWD/build/Video Prompt.app/Contents/MacOS/vp-mcp" claude --pl
 | # | Step | Expected |
 |---|---|---|
 | 1 | Click the ◉ icon in the menu bar | Menu: Record Chrome window (with the tab title), whole screen, area…, another window…, Recordings… |
-| 2 | First recording: macOS asks for Screen Recording | Allow it in System Settings; macOS asks to Quit & Reopen the app |
-| 3 | Open Chrome, press ⌃⌥⌘R | 3-2-1, red outline… then the control bar (● timer ❚❚ ✎ ■) at the top |
+| 2 | First recording: macOS asks for Screen Recording, then Microphone | Both prompts name **Video Prompt** (never your terminal). Allow; Quit & Reopen restarts only Video Prompt. The recording starts once (no second stream) |
+| 3 | Open Chrome, press ⌃⌥⌘R | 3-2-1 countdown, then the control bar (● timer ❚❚ ✎ ■) at the top; menu icon turns red |
 | 4 | Talk ~10 s; click ✎, circle something; click ✎ again | Red circle on screen, fades after ~3 s; clicks work again after ✎ off |
 | 5 | Resize the Chrome window, keep talking, then ■ | "Transcribing on this Mac…", then the review panel |
 | 6 | Review panel | Transcript is your words; frames show Chrome only; the circle is visible in a frame; later frames narrower |
@@ -22,6 +22,11 @@ VIDEO_PROMPT_MCP="$PWD/build/Video Prompt.app/Contents/MacOS/vp-mcp" claude --pl
 | 10 | Record, then Send to waiting session | Claude answers from the recording; amber dot goes away |
 | 11 | Pause/resume during a recording | Timer stops while paused; recording continues after resume |
 | 12 | Recordings… | Rows with status/expiry; trash moves to the macOS Trash; Auto-delete picker works |
+| 13 | Draw, then Undo or Clear, then Stop | Undone marks aren't described in prompt.md |
+| 14 | While the review panel is open, click into Chrome | The panel stays; closing it saves (toast), Recordings shows it |
+| 15 | Double-click ■ | One processing run, no error toast |
+| 16 | Stop from the macOS screen-recording indicator in the menu bar | Toast "Recording stopped…", then the review panel with what was recorded |
+| 17 | First frame | No countdown overlay in frame 1 |
 
 Results:
 

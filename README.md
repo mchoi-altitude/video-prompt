@@ -25,6 +25,19 @@ export VIDEO_PROMPT_MCP=$PWD/.build/release/vp-mcp
 claude --plugin-dir plugins/video-prompt   # then: "look at my recording"
 ```
 
+### The Mac app
+
+No Xcode needed for development. One-time: `scripts/make-dev-cert.sh` creates a local
+"Video Prompt Dev" signing identity, so macOS keeps the app's Screen Recording and Microphone
+permission across rebuilds. Then:
+
+```bash
+scripts/build-app.sh            # → build/Video Prompt.app (debug; --release for release)
+open "build/Video Prompt.app"
+```
+
+`docs/manual-test.md` is the end-to-end checklist.
+
 ### The Claude Code plugin
 
 `plugins/video-prompt` runs `vp-mcp`, a stdio MCP server that ships inside the app. It reads the

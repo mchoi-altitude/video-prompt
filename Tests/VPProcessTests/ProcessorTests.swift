@@ -29,14 +29,15 @@ private func circle() -> [Point] {
 }
 
 /// Raw folder: one 12 s segment (needs `sayText` for an audio track), session + events.
-private func makeRaw(_ paths: Paths, events: [RawEvent], segments: Int = 1, corrupt: Bool = false) async throws -> String {
+private func makeRaw(_ paths: Paths, events: [RawEvent], segments: Int = 1, segmentNumbers: [Int]? = nil,
+                     corrupt: Bool = false) async throws -> String {
     let id = try paths.newRecordingID(now: createdAt, calendar: utc)
     let raw = paths.raw(id)
     try FileManager.default.createDirectory(at: raw, withIntermediateDirectories: true)
     try writeJSON(RawSession(mode: .window, display: display, windowTitle: "Settings", createdAt: createdAt), to: raw.appending(path: "session.json"))
     let lines = try events.map { String(decoding: try JSONEncoder().encode($0), as: UTF8.self) }.joined(separator: "\n")
     try Data(lines.utf8).write(to: raw.appending(path: "events.jsonl"))
-    for s in 1...segments {
+    for s in segmentNumbers ?? Array(1...segments) {
         let url = raw.appending(path: String(format: "seg_%03d.mov", s))
         if corrupt { try Data("not a movie".utf8).write(to: url); continue }
         try await makeColorVideo(url: url, size: (640, 400),
@@ -119,3 +120,25 @@ private let resize: [RawEvent] = [
 }
 
 func tempPathsForProcess() -> Paths { Paths(root: tempDir()) }
+
+@Test func windowPartlyOffScreenMapsCoordinates() async throws {
+    let paths = tempPathsForProcess()
+    // 100 pt of the window hang off the left edge of the 640×400 display.
+    let id = try await makeRaw(paths, events: [
+        .window(seg: 1, t: 0, frame: Rect(x: -100, y: 30, w: 400, h: 300), visible: true),
+        .cursor(seg: 1, t: 0.4, p: Point(x: 50, y: 280))])
+    _ = try await Processor(store: Store(paths: paths), paths: paths, transcriber: nil, calendar: utc).process(id: id)
+    let first = try #require(try Store(paths: paths).manifest(id).frames.first)
+    #expect(first.width == 300)
+    #expect(first.cursor == [50, 250])
+}
+
+@Test func segmentNumbersComeFromFileNames() async throws {
+    let paths = tempPathsForProcess()
+    // seg_002 is missing (an empty segment the app dropped): seg 3 starts right after seg 1.
+    let id = try await makeRaw(paths, events: [.window(seg: 1, t: 0, frame: win, visible: true),
+                                               .stroke(seg: 3, t0: 0.5, t1: 1, points: circle(), tool: .pen)],
+                               segmentNumbers: [1, 3])
+    _ = try await Processor(store: Store(paths: paths), paths: paths, transcriber: nil, calendar: utc).process(id: id)
+    #expect(abs((try Store(paths: paths).manifest(id).strokes.first?.end ?? 0) - 13) < 0.2)
+}

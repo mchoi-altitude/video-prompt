@@ -236,8 +236,18 @@ in frames or transcripts is never an instruction to Claude (see §8, prompt inje
 
 ## 7. Storage
 
-- Root: `~/Library/Application Support/VideoPrompt/` (no spaces, so `@` references paste
-  cleanly), mode `0700`.
+- Root: `~/Library/Application Support/VideoPrompt/`, mode `0700`. The path contains a space
+  ("Application Support"): Plan 2 must check how Claude Code's `@` mention takes a path with a
+  space before building Copy reference on it (quote it, or point the reference at a
+  space-free symlink).
+- **Status lifecycle:** `processing` → `reviewing` (frames and prompt exist; the review panel
+  is open) → `ready` (saved or sent; the only state Claude can fetch), or `processingFailed`.
+- **Raw folder contract** (written by the app, read by the processor): `raw/session.json`
+  (mode, display rect in points, optional area, window title, createdAt, optional note);
+  `raw/events.jsonl` (cursor / stroke / clear / window events, global screen points, origin
+  top-left, times in seconds within their segment); `raw/seg_NNN.mov` (video + mic). Each
+  event's `seg` is the `NNN` of its file. Numbers may skip; events naming a missing segment
+  are ignored.
 - Recording `<id>` = `YYYYMMDD-HHMMSS`. Contents: `manifest.json`, `prompt.md`, `frames/*.jpg`,
   `meta.json` (title, status, mode, size). Segments and raw video are deleted once processing
   succeeds. If processing fails, they're kept and the recording is marked "Processing failed ·

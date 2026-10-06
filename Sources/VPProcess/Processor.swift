@@ -42,7 +42,14 @@ public struct Processor: Sendable {
             .filter { $0.lastPathComponent.hasPrefix("seg_") }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
         guard !segURLs.isEmpty else { throw ProcessorError.noSegments }
-        let (asset, durations) = try await joinSegments(segURLs)
+        let (asset, byPosition) = try await joinSegments(segURLs)
+        // Events name segments by the number in `seg_NNN.mov`, which can skip (an empty segment
+        // the app dropped), so key durations by file number, not position.
+        var durations: [Int: Double] = [:]
+        for (i, url) in segURLs.enumerated() {
+            guard let n = segmentNumber(url) else { continue }
+            durations[n] = byPosition[i + 1]
+        }
         let offsets = segmentOffsets(durations: durations)
         let duration = try await asset.load(.duration).seconds
         guard let vt = try await asset.loadTracks(withMediaType: .video).first else { throw MediaError.noVideoTrack(id) }
@@ -61,7 +68,9 @@ public struct Processor: Sendable {
             case let .stroke(seg, t0, t1, pts, tool): if let o = offsets[seg] { rawStrokes.append((o + t0, o + t1, pts, tool)) }
             }
         }
-        let crops = CropTimeline(mode: session.mode, display: session.display, area: session.area, windowSamples: windows)
+        let timeline = CropTimeline(mode: session.mode, display: session.display, area: session.area, windowSamples: windows)
+        // Only the on-screen part of a window is in the video, so crop and map with that part.
+        func crop(at t: Double) -> Rect? { timeline.crop(at: t).flatMap { clip($0, to: session.display) } }
         func dims(_ c: Rect) -> (w: Int, h: Int) { frameSize(cropW: c.w * sx, cropH: c.h * sy) }
 
         // Narration.
@@ -78,15 +87,14 @@ public struct Processor: Sendable {
         try fm.createDirectory(at: framesDir, withIntermediateDirectories: true)
         var frames: [ManifestFrame] = [], hidden: [Double] = []
         for pick in picks {
-            guard let crop = crops.crop(at: pick.time) else { hidden.append(pick.time); continue }
+            guard let crop = crop(at: pick.time) else { hidden.append(pick.time); continue }
             let index = frames.count + 1
             let t = pick.time
             let name = String(format: "frame_%02d_%02dm%04.1fs.jpg", index, Int(t / 60), t.truncatingRemainder(dividingBy: 60))
             let img = try await grabFrame(asset, at: t, crop: crop, display: session.display)
             let size = try writeJPEG(img, maxLongEdge: 1568, to: framesDir.appending(path: name))
-            let d = dims(crop)
             let cur = cursor(at: t, in: cursorPts.map { CursorSample(t: $0.t, p: [Int($0.p.x.rounded()), Int($0.p.y.rounded())]) })
-                .flatMap { toFramePixels(Point(x: Double($0[0]), y: Double($0[1])), crop: crop, frameW: d.w, frameH: d.h) }
+                .flatMap { toFramePixels(Point(x: Double($0[0]), y: Double($0[1])), crop: crop, frameW: size.w, frameH: size.h) }
             frames.append(ManifestFrame(index: index, time: t, reasons: pick.reasons, file: "frames/\(name)",
                                         width: size.w, height: size.h, cursor: cur))
         }
@@ -94,7 +102,7 @@ public struct Processor: Sendable {
         // Drawings, in the pixels of the frame they appear in.
         var strokes: [ManifestStroke] = []
         for s in rawStrokes {
-            guard let crop = crops.crop(at: s.t1) else { continue }
+            guard let crop = crop(at: s.t1) else { continue }
             let d = dims(crop)
             let px = s.points.compactMap { toFramePixels($0, crop: crop, frameW: d.w, frameH: d.h) }
             guard px.count >= 2 else { continue }
@@ -123,6 +131,21 @@ public struct Processor: Sendable {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
         return try text.split(whereSeparator: \.isNewline).map { try JSON.decoder.decode(RawEvent.self, from: Data($0.utf8)) }
     }
+}
+
+/// `seg_003.mov` → 3.
+func segmentNumber(_ url: URL) -> Int? {
+    let name = url.deletingPathExtension().lastPathComponent
+    guard name.hasPrefix("seg_") else { return nil }
+    return Int(name.dropFirst(4))
+}
+
+/// The part of `r` inside `bounds`; nil when none of it is.
+func clip(_ r: Rect, to bounds: Rect) -> Rect? {
+    let x0 = max(r.x, bounds.x), y0 = max(r.y, bounds.y)
+    let x1 = min(r.x + r.w, bounds.x + bounds.w), y1 = min(r.y + r.h, bounds.y + bounds.h)
+    guard x1 > x0, y1 > y0 else { return nil }
+    return Rect(x: x0, y: y0, w: x1 - x0, h: y1 - y0)
 }
 
 func round2(_ x: Double) -> Double { (x * 100).rounded() / 100 }

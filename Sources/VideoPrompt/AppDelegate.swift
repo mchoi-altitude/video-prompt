@@ -76,7 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.$state.receive(on: DispatchQueue.main).sink { [unowned self] s in stateChanged(s) }.store(in: &subs)
         watcher.$current.receive(on: DispatchQueue.main).sink { [unowned self] _ in refreshBadge() }.store(in: &subs)
 
-        timers.append(Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        timers.append(Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.watcher.poll()

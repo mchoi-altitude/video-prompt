@@ -51,6 +51,8 @@ public final class RecordingController: ObservableObject {
     private var runningSince: Double?
     /// A start, pause or stop is awaiting the capture; further clicks and ticks are ignored.
     private var busy = false
+    /// When the current countdown number appeared; each one shows for a full second.
+    private var countdownStep = 0.0
 
     public init(paths: Paths, store: Store, capture: CaptureBackend, clock: @escaping () -> Double,
                 makeProcessor: @escaping () -> Processor, settings: SettingsStore) {
@@ -76,13 +78,16 @@ public final class RecordingController: ObservableObject {
         }
         self.target = target
         accumulated = 0; runningSince = nil; elapsed = 0
+        countdownStep = clock()
         state = .countdown(3)
     }
 
     public func tick() async {
         guard !busy else { return }
+        if case .countdown = state, clock() - countdownStep < 0.95 { return }
         switch state {
         case let .countdown(n) where n > 1:
+            countdownStep = clock()
             state = .countdown(n - 1)
         case .countdown:
             busy = true

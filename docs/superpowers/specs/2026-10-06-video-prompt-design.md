@@ -201,8 +201,9 @@ vocabulary; a whisper.cpp model would be downloaded with a pinned checksum.
 
 A Claude Code plugin in this repo (marketplace `video-prompt`, plugin `video-prompt`). Its MCP
 server is a **small native CLI inside the app bundle**, so users need no Python or Node. The
-plugin config points at the app's bundled binary; if the app isn't installed, the tools return
-a clear "install Video Prompt" message.
+plugin config points at the app's bundled binary (`${VIDEO_PROMPT_MCP:-/Applications/Video
+Prompt.app/Contents/MacOS/vp-mcp}`). If the app isn't installed, the server can't start: Claude
+Code shows the plugin's MCP server as failed, and the README explains why.
 
 ### 6.2 Tools
 
@@ -221,6 +222,10 @@ a clear "install Video Prompt" message.
 - The app watches `waiters/`. Any live waiter turns on the **amber dot** and switches the review
   button to "Send to waiting session" (destination = the waiter's `cwd`). With several waiters,
   the **most recent** one gets it.
+- **Delivery is explicit.** Send sets `deliveredToPID` in the recording's meta to the most
+  recent live waiter. A waiter returns only a ready, not-yet-fetched recording delivered to its
+  own pid, so Copy reference and A-path saves never wake a waiting session. Pressing Esc in
+  Claude Code (MCP `notifications/cancelled`) ends the wait and removes the waiter file.
 - Detecting the plugin for setup step 3: the plugin's server writes `plugin-seen.json` the
   first time it starts.
 

@@ -1,0 +1,14 @@
+{
+  "name": "video-prompt",
+  "description": "Video Prompt for Claude Code: record your screen, narrate and draw, and hand it to Claude.",
+  "owner": {
+    "name": "mchoi-altitude"
+  },
+  "plugins": [
+    {
+      "name": "video-prompt",
+      "source": "./plugins/video-prompt",
+      "description": "Show Claude your screen: fetch Video Prompt recordings (narration, drawings, keyframes) or wait for the user to record one."
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "name": "video-prompt",
+  "version": "0.1.0",
+  "description": "Connects Claude Code to the Video Prompt Mac app: get_latest_recording, list_recordings, get_recording, wait_for_next_recording.",
+  "author": { "name": "mchoi-altitude" },
+  "license": "MIT"
+}

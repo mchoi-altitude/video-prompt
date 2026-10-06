@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "video-prompt": {
+      "command": "${VIDEO_PROMPT_MCP:-/Applications/Video Prompt.app/Contents/MacOS/vp-mcp}",
+      "args": []
+    }
+  }
+}

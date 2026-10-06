@@ -100,8 +100,14 @@ public struct Processor: Sendable {
         // Narration.
         var transcript: [Sentence] = []
         let wav = raw.appending(path: "audio.wav")
-        if let transcriber, try await exportMonoWAV16k(asset, to: wav) {
+        let transcription: TranscriptionState
+        if !(try await exportMonoWAV16k(asset, to: wav)) {
+            transcription = .noAudio
+        } else if let transcriber {
             transcript = sentences(from: try await transcriber.words(wav: wav))
+            transcription = transcript.isEmpty ? .noSpeech : .ok
+        } else {
+            transcription = .unavailable
         }
 
         let clicks = clicksRaw.compactMap { c in videoPixels(c.p, at: c.t).map { ManifestClick(t: round2(c.t), x: $0[0], y: $0[1]) } }
@@ -121,6 +127,7 @@ public struct Processor: Sendable {
         let overview = try await makeOverview(video: dir.appending(path: "video.mp4"), to: dir.appending(path: "overview.jpg"))
 
         let manifest = Manifest(id: id, duration: round2(rendered.duration), mode: session.mode, transcript: transcript,
+                                transcription: transcription,
                                 video: VideoInfo(file: "video.mp4", width: rendered.width, height: rendered.height, fps: VideoFPS,
                                                  hasAudio: rendered.hasAudio),
                                 overview: "overview.jpg", overviewSecondsPerTile: overview.secondsPerTile, strokes: strokes, clicks: clicks,

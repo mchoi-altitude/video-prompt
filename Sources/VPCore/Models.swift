@@ -106,6 +106,17 @@ public struct ManifestClick: Codable, Sendable, Equatable {
     public init(t: Double, x: Int, y: Int) { self.t = t; self.x = x; self.y = y }
 }
 
+/// What happened to the narration: shown to Claude so silence and "no speech engine" aren't confused.
+public enum TranscriptionState: String, Codable, Sendable {
+    case ok
+    /// There was audio, but no speech in it.
+    case noSpeech
+    /// No audio track (microphone off or denied).
+    case noAudio
+    /// Speech-to-text isn't installed on this Mac.
+    case unavailable
+}
+
 /// The window-only recording video.
 public struct VideoInfo: Codable, Sendable, Equatable {
     public var file: String
@@ -165,6 +176,7 @@ public struct Manifest: Codable, Sendable, Equatable {
     public var duration: Double
     public var mode: CaptureMode
     public var transcript: [Sentence]
+    public var transcription: TranscriptionState
     public var video: VideoInfo
     /// Contact sheet file, relative to the recording folder.
     public var overview: String
@@ -173,9 +185,11 @@ public struct Manifest: Codable, Sendable, Equatable {
     public var clicks: [ManifestClick]
     public var timeline: [TimelineItem]
     public var note: String?
-    public init(id: String, duration: Double, mode: CaptureMode, transcript: [Sentence], video: VideoInfo, overview: String,
+    public init(id: String, duration: Double, mode: CaptureMode, transcript: [Sentence], transcription: TranscriptionState = .ok,
+                video: VideoInfo, overview: String,
                 overviewSecondsPerTile: Int, strokes: [ManifestStroke], clicks: [ManifestClick], timeline: [TimelineItem], note: String? = nil) {
-        self.id = id; self.duration = duration; self.mode = mode; self.transcript = transcript; self.video = video
+        self.id = id; self.duration = duration; self.mode = mode; self.transcript = transcript
+        self.transcription = transcript.isEmpty && transcription == .ok ? .noSpeech : transcription; self.video = video
         self.overview = overview; self.overviewSecondsPerTile = overviewSecondsPerTile; self.strokes = strokes
         self.clicks = clicks; self.timeline = timeline; self.note = note
     }

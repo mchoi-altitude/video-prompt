@@ -37,7 +37,13 @@ public actor MCPServer {
 
     private func finished(_ id: JSONValue) { running[id] = nil }
 
-    /// Waits for every in-flight request to finish writing its reply (used when stdin closes).
+    /// stdin closed: stop waiting (so no waiter outlives the session), then let replies finish.
+    public func shutdown() async {
+        for task in running.values { task.cancel() }
+        await drain()
+    }
+
+    /// Waits for every in-flight request to finish writing its reply.
     public func drain() async {
         for task in Array(running.values) { await task.value }
     }

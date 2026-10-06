@@ -156,3 +156,50 @@ actor Collector {
     await s.drain()
     #expect(await out.lines.count == 1)
 }
+
+@Test func shutdownCancelsWaitsAndRemovesWaiter() async throws {
+    let p = Paths(root: tempDir())
+    let s = server(p)
+    let out = Collector()
+    await s.start(line: toolCall("wait_for_next_recording", #"{"timeout_s":30}"#, id: 9), write: { await out.add($0) })
+    try await Task.sleep(for: .milliseconds(100))
+    let start = ContinuousClock.now
+    await s.shutdown()
+    #expect(ContinuousClock.now - start < .seconds(2))
+    #expect(Waiters(paths: p).live(isAlive: { _ in true }).isEmpty)
+}
+
+@Test func badLimitDoesNotCrash() async throws {
+    let p = Paths(root: tempDir())
+    try addReady(p, id: "r1")
+    for limit in ["-1", "0", "1e300"] {
+        let c = content(try await call(server(p), toolCall("list_recordings", #"{"limit":\#(limit)}"#)))
+        #expect((c.first?["text"] as? String)?.contains("r1") == true)
+    }
+}
+
+@Test func timeoutIsClamped() {
+    #expect(Tools.clampedSeconds(1e300) == 3600)
+    #expect(Tools.clampedSeconds(-5) == 0)
+    #expect(Tools.clampedSeconds(.nan) == 300)
+    #expect(Tools.clampedLimit(-1) == 1)
+    #expect(Tools.clampedLimit(1e300) == 100)
+}
+
+@Test func getRecordingRejectsPathTraversal() async throws {
+    let p = Paths(root: tempDir())
+    try addReady(p, id: "r1")
+    // A ready-looking recording outside recordings/.
+    try FileManager.default.copyItem(at: p.recording("r1"), to: p.root.appending(path: "evil"))
+    let r = try await call(server(p), toolCall("get_recording", #"{"id":"../evil"}"#))
+    #expect((r["result"] as? [String: Any])?["isError"] as? Bool == true)
+    #expect(try readJSON(RecordingMeta.self, from: p.root.appending(path: "evil/meta.json")).fetchedByCwd == nil)
+}
+
+@Test func mcpPromptSaysFramesAreAttached() async throws {
+    let p = Paths(root: tempDir())
+    try addReady(p, id: "r1")
+    let text = content(try await call(server(p), toolCall("get_latest_recording"))).first?["text"] as? String ?? ""
+    #expect(text.contains("attached"))
+    #expect(!text.contains("Read tool"))
+}

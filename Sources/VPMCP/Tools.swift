@@ -20,6 +20,15 @@ enum Tools {
              ["timeout_s": .object(["type": .string("number"), "description": .string("Seconds to wait (default 300)")])]),
     ]
 
+    /// Tool arguments come from the model and may be steered by screen content: never trust them.
+    static func clampedSeconds(_ s: Double) -> Double { s.isNaN ? 300 : min(max(s, 0), 3600) }
+    static func clampedLimit(_ n: Double) -> Int { n.isNaN ? 10 : Int(min(max(n, 1), 100)) }
+
+    /// A recording id is a plain folder name inside recordings/ (no `/`, no `..`).
+    static func isValidID(_ id: String) -> Bool {
+        !id.isEmpty && !id.hasPrefix(".") && !id.contains("/") && !id.contains("\\")
+    }
+
     static func text(_ s: String, isError: Bool = false) -> JSONValue {
         .object(["content": .array([.object(["type": .string("text"), "text": .string(s)])]), "isError": .bool(isError)])
     }
@@ -34,30 +43,30 @@ extension MCPServer {
             }
             return recording(meta.id)
         case "get_recording":
-            guard let id = args["id"]?.string, (try? store.meta(id))?.status == .ready else {
+            guard let id = args["id"]?.string, Tools.isValidID(id), (try? store.meta(id))?.status == .ready else {
                 return Tools.text("No ready recording with that id. Call list_recordings to see what exists.", isError: true)
             }
             return recording(id)
         case "list_recordings":
-            let limit = Int(args["limit"]?.number ?? 10)
+            let limit = Tools.clampedLimit(args["limit"]?.number ?? 10)
             let rows = store.list().prefix(limit).map { m in
                 "\(m.id) · \(m.title) · \(m.createdAt.formatted(date: .abbreviated, time: .shortened)) · \(fmtLen(m.duration)) · \(m.status.rawValue)"
             }
             return Tools.text(rows.isEmpty ? "No recordings yet." : rows.joined(separator: "\n"))
         case "wait_for_next_recording":
-            return await waitForNext(timeout: args["timeout_s"]?.number ?? 300)
+            return await waitForNext(timeout: Tools.clampedSeconds(args["timeout_s"]?.number ?? 300))
         default:
             return Tools.text("Unknown tool \(name)", isError: true)
         }
     }
 
-    /// prompt.md as text, then every keyframe as an inline image, in order. Marks it fetched.
+    /// The prompt as text, then every keyframe as an inline image, in order. Marks it fetched.
     func recording(_ id: String) -> JSONValue {
         let dir = store.paths.recording(id)
-        guard let prompt = try? String(contentsOf: dir.appending(path: "prompt.md"), encoding: .utf8),
-              let m = try? store.manifest(id) else {
+        guard let m = try? store.manifest(id) else {
             return Tools.text("Recording \(id) could not be read.", isError: true)
         }
+        let prompt = renderPrompt(m, recordingDir: dir, framesAttached: true)
         var content: [JSONValue] = [.object(["type": .string("text"), "text": .string(prompt)])]
         for f in m.frames {
             guard let data = try? Data(contentsOf: dir.appending(path: f.file)) else { continue }

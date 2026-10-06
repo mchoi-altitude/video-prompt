@@ -1,4 +1,7 @@
+import CoreGraphics
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 import VPCore
 
 enum Tools {
@@ -27,6 +30,40 @@ enum Tools {
     /// A recording id is a plain folder name inside recordings/ (no `/`, no `..`).
     static func isValidID(_ id: String) -> Bool {
         !id.isEmpty && !id.hasPrefix(".") && !id.contains("/") && !id.contains("\\")
+    }
+
+    /// Claude's image cost is about width × height / 750 tokens.
+    static func imageTokens(_ w: Int, _ h: Int, scale: Double) -> Double { Double(w) * scale * Double(h) * scale / 750 }
+
+    /// Which frames to attach, and at what scale, to stay within `budgetTokens`: first shrink
+    /// (never below `minLongEdge`, so UI text stays legible), then attach an evenly spread
+    /// subset that always includes the first and last frame.
+    static func attachmentPlan(sizes: [(Int, Int)], budgetTokens: Int, minLongEdge: Int = 1024) -> (scale: Double, inline: [Int]) {
+        let n = sizes.count
+        guard n > 0 else { return (1, []) }
+        let budget = Double(max(budgetTokens, 0))
+        let total = sizes.reduce(0.0) { $0 + imageTokens($1.0, $1.1, scale: 1) }
+        if total <= budget { return (1, Array(0..<n)) }
+        let longest = Double(sizes.map { max($0.0, $0.1) }.max()!)
+        let floorScale = min(1, Double(minLongEdge) / longest)
+        let scale = max(sqrt(budget / total), floorScale)
+        let each = total * scale * scale / Double(n)
+        let k = min(n, max(min(n, 2), Int(budget / each)))
+        if k == n { return (scale, Array(0..<n)) }
+        let picks = (0..<k).map { k == 1 ? 0 : Int((Double($0) * Double(n - 1) / Double(k - 1)).rounded()) }
+        return (scale, Array(Set(picks)).sorted())
+    }
+
+    /// JPEG re-encoded so its long edge is `maxPixel`.
+    static func shrinkJPEG(_ data: Data, maxPixel: Int) -> Data? {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil),
+              let img = CGImageSourceCreateThumbnailAtIndex(src, 0, [
+                  kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+              ] as CFDictionary) else { return nil }
+        let out = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(out, UTType.jpeg.identifier as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(dest, img, [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary)
+        return CGImageDestinationFinalize(dest) ? out as Data : nil
     }
 
     static func text(_ s: String, isError: Bool = false) -> JSONValue {
@@ -66,10 +103,20 @@ extension MCPServer {
         guard let m = try? store.manifest(id) else {
             return Tools.text("Recording \(id) could not be read.", isError: true)
         }
-        let prompt = renderPrompt(m, recordingDir: dir, framesAttached: true)
+        let plan = Tools.attachmentPlan(sizes: m.frames.map { ($0.width, $0.height) }, budgetTokens: imageBudgetTokens)
+        let attached = Set(plan.inline)
+        var prompt = renderPrompt(m, recordingDir: dir, framesAttached: true)
+        let skipped = m.frames.enumerated().filter { !attached.contains($0.offset) }.map(\.element)
+        if !skipped.isEmpty {
+            prompt += "\n## Frames not attached\n\nThese didn't fit in one reply. Open them with your Read tool if you need them:\n\n"
+                + skipped.map { "- Frame \($0.index): `\(dir.appending(path: $0.file).path)`" }.joined(separator: "\n") + "\n"
+        }
         var content: [JSONValue] = [.object(["type": .string("text"), "text": .string(prompt)])]
-        for f in m.frames {
-            guard let data = try? Data(contentsOf: dir.appending(path: f.file)) else { continue }
+        for (i, f) in m.frames.enumerated() where attached.contains(i) {
+            guard var data = try? Data(contentsOf: dir.appending(path: f.file)) else { continue }
+            if plan.scale < 1, let small = Tools.shrinkJPEG(data, maxPixel: Int((Double(max(f.width, f.height)) * plan.scale).rounded())) {
+                data = small
+            }
             content.append(.object(["type": .string("image"), "data": .string(data.base64EncodedString()), "mimeType": .string("image/jpeg")]))
         }
         try? store.update(id) { $0.fetchedByCwd = cwd }

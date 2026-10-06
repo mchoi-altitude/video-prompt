@@ -299,8 +299,14 @@ the plugin install command (README), and the Homebrew cask.
 2. Window-frame polling for Chrome while it's moved, resized, full-screened or minimized:
    define what a frame shows when the window is minimized (proposal: skip frames; note "window
    hidden" in the timeline).
-3. How long Claude Code lets an MCP tool call block (`wait_for_next_recording`). Pick a default
-   timeout below it, with a "still waiting? call again" result.
+3. ~~How long Claude Code lets an MCP tool call block~~ **Measured 2026-10-06 (Claude Code
+   2.1.291):** a `wait_for_next_recording` call blocked for the full 900 s without being cut
+   off. The default stays 300 s, returning "still waiting, call again".
+   **Also measured:** Claude Code truncates a tool reply over `MAX_MCP_OUTPUT_TOKENS` (25,000
+   by default). 24 full-size frames got cut off after 15. The server now budgets images to 80%
+   of that limit: it shrinks frames (long edge never below 1024 px), then attaches an evenly
+   spread subset (always the first and last frame) and lists the rest as paths for Read.
+   Verified: 24 frames → 22 attached, last frame legible, 2 listed.
 4. Transcription engine accuracy on developer speech (§5).
 
 ## 12. Testing

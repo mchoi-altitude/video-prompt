@@ -10,13 +10,18 @@ public actor MCPServer {
     let cwd: String
     let now: @Sendable () -> Date
     let pollInterval: Duration
+    /// Image tokens one tool reply may carry. Claude Code cuts replies above
+    /// MAX_MCP_OUTPUT_TOKENS (25,000 by default), so stay at 80% of it.
+    let imageBudgetTokens: Int
     private var running: [JSONValue: Task<Void, Never>] = [:]
 
     static let supportedVersions = ["2024-11-05", "2025-03-26", "2025-06-18"]
 
     public init(store: Store, waiters: Waiters, pid: Int32, cwd: String, now: @escaping @Sendable () -> Date = { .now },
-                pollInterval: Duration = .milliseconds(500)) {
+                pollInterval: Duration = .milliseconds(500), imageBudgetTokens: Int? = nil) {
         self.store = store; self.waiters = waiters; self.pid = pid; self.cwd = cwd; self.now = now; self.pollInterval = pollInterval
+        let limit = Int(ProcessInfo.processInfo.environment["MAX_MCP_OUTPUT_TOKENS"] ?? "") ?? 25_000
+        self.imageBudgetTokens = imageBudgetTokens ?? limit * 8 / 10
     }
 
     /// Handles one line concurrently with the others, so a blocked wait doesn't hold up pings,

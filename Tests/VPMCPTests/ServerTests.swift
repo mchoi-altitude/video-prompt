@@ -203,3 +203,35 @@ actor Collector {
     #expect(text.contains("attached"))
     #expect(!text.contains("Read tool"))
 }
+
+@Test func smallRecordingsAttachEverythingFullSize() {
+    let p = Tools.attachmentPlan(sizes: Array(repeating: (1568, 980), count: 6), budgetTokens: 20000)
+    #expect(p.scale == 1)
+    #expect(p.inline == [0, 1, 2, 3, 4, 5])
+}
+
+@Test func largeRecordingsShrinkThenSpreadAttachments() {
+    let p = Tools.attachmentPlan(sizes: Array(repeating: (1568, 980), count: 24), budgetTokens: 20000)
+    #expect(abs(p.scale - 1024.0 / 1568) < 0.001)     // shrunk, but never below a 1024 px long edge
+    #expect(p.inline.count == 22)
+    #expect(p.inline.first == 0 && p.inline.last == 23)  // first and last frame always attached
+}
+
+@Test func overBudgetFramesAreListedForRead() async throws {
+    let p = Paths(root: tempDir())
+    let id = "r5", dir = p.recording(id)
+    try FileManager.default.createDirectory(at: dir.appending(path: "frames"), withIntermediateDirectories: true)
+    let frames = (1...5).map { ManifestFrame(index: $0, time: Double($0), reasons: ["narration"], file: "frames/f\($0).jpg", width: 2, height: 2) }
+    for f in frames { try Data([0xFF, 0xD8, 0xFF]).write(to: dir.appending(path: f.file)) }
+    try writeJSON(Manifest(id: id, duration: 6, mode: .window, transcript: [], frames: frames, strokes: [],
+                           timeline: buildTimeline(frames: frames, transcript: [], strokes: [], clears: [], hidden: [])),
+                  to: dir.appending(path: "manifest.json"))
+    try writeJSON(RecordingMeta(id: id, title: "t", createdAt: .now, duration: 6, mode: .window, status: .ready), to: dir.appending(path: "meta.json"))
+    let s = MCPServer(store: Store(paths: p), waiters: Waiters(paths: p), pid: myPID, cwd: "/proj", imageBudgetTokens: 0)
+    let c = content(try await call(s, toolCall("get_latest_recording")))
+    #expect(c.filter { $0["type"] as? String == "image" }.count == 2)  // first and last are always sent
+    let text = c.first?["text"] as? String ?? ""
+    #expect(text.contains("Frames not attached"))
+    #expect(text.contains(dir.appending(path: "frames/f3.jpg").path))
+    #expect(!text.contains(dir.appending(path: "frames/f5.jpg").path))
+}

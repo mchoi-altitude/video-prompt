@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Combine
 import os
 
@@ -39,7 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var recordingsModel = RecordingsModel(store: store, settings: settings)
 
     private var statusItem: StatusItem?
-    private var hotkey: Hotkey?
+    private let hotkeys = Hotkeys()
     private lazy var controlBar = ControlBarPanel(controller: controller) { [weak self] in self?.stop() }
     private lazy var overlay = OverlayController(model: controller.drawing)
     private let countdown = CountdownWindow()
@@ -83,9 +84,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menuItems(waiting: watcher.current, chrome: frontmostChromeWindow(windows.windows()),
                       lastMode: settings.settings.lastMode, recordingCount: store.list().count, busy: MenuBusy(controller.state))
         }, onAction: { [unowned self] in handle($0) })
-        hotkey = Hotkey { [weak self] in
+        hotkeys.register(kVK_ANSI_R, id: 1) { [weak self] in
             guard let self else { return }
             if MenuBusy(self.controller.state) == .recording { self.stop() } else { self.startLastMode() }
+        }
+        // Draw on/off while recording (not while paused: nothing is recorded then).
+        hotkeys.register(kVK_ANSI_D, id: 2) { [weak self] in
+            guard let self, case .recording(paused: false) = self.controller.state else { return }
+            self.controller.drawOn.toggle()
         }
         controller.excludedWindowIDs = { [unowned self] in [controlBar.windowID] }
         // The system ended capture (menu-bar indicator, display unplugged, sleep): keep what was

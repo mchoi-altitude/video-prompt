@@ -2,23 +2,34 @@ import AppKit
 import Carbon.HIToolbox
 import os
 
-/// ⌃⌥⌘R anywhere. Carbon hot keys need no Accessibility permission.
+/// Global shortcuts (⌃⌥⌘R record/stop, ⌃⌥⌘D draw). Carbon hot keys need no Accessibility or
+/// Input Monitoring permission.
 @MainActor
-final class Hotkey {
-    private var ref: EventHotKeyRef?
+final class Hotkeys {
+    private var refs: [EventHotKeyRef?] = []
     private var handler: EventHandlerRef?
-    nonisolated(unsafe) private static var action: (() -> Void)?
+    nonisolated(unsafe) private static var actions: [UInt32: () -> Void] = [:]
 
-    init(action: @escaping () -> Void) {
-        Self.action = action
+    init() {
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        let installed = InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in
-            log.notice("hotkey pressed")
-            DispatchQueue.main.async { Hotkey.action?() }
+        let installed = InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
+            var id = EventHotKeyID()
+            GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil,
+                              MemoryLayout<EventHotKeyID>.size, nil, &id)
+            log.notice("hotkey \(id.id, privacy: .public) pressed")
+            DispatchQueue.main.async { Hotkeys.actions[id.id]?() }
             return noErr
         }, 1, &spec, nil, &handler)
-        let id = EventHotKeyID(signature: OSType(0x5650_5254), id: 1)  // 'VPRT'
-        let registered = RegisterEventHotKey(UInt32(kVK_ANSI_R), UInt32(controlKey | optionKey | cmdKey), id, GetApplicationEventTarget(), 0, &ref)
-        log.notice("hotkey handler=\(installed, privacy: .public) register=\(registered, privacy: .public)")
+        log.notice("hotkey handler=\(installed, privacy: .public)")
+    }
+
+    /// ⌃⌥⌘ + `key` (a kVK_ code).
+    func register(_ key: Int, id: UInt32, action: @escaping () -> Void) {
+        Self.actions[id] = action
+        var ref: EventHotKeyRef?
+        let status = RegisterEventHotKey(UInt32(key), UInt32(controlKey | optionKey | cmdKey),
+                                         EventHotKeyID(signature: OSType(0x5650_5254), id: id), GetApplicationEventTarget(), 0, &ref)
+        log.notice("hotkey \(id, privacy: .public) register=\(status, privacy: .public)")
+        refs.append(ref)
     }
 }

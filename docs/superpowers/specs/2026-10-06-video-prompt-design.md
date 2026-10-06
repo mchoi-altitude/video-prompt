@@ -49,7 +49,7 @@ move to an AltitudeIQ GitHub organization later (see §9 for what must be stable
 | 10 | Review step | **On** by default, with the main button focused so **Return sends**. A video preview, the transcript (fixable) and a typed note. **No trimming or frame removal**: Discard and re-record instead. Setting: skip review. |
 | 11 | Retention | Auto-delete after **3 days** (setting: 1 / 3 / 7 / 30 days, keep the last 20, never). |
 | 12 | Manual delete | **Recordings…** window: trash per row, checkboxes, "Select all sent", bulk delete. Deleted recordings go to the **macOS Trash** (no confirm dialog). |
-| 13 | Video | The **window-only video is kept** with the recording and expires with it (§2 #11). The full-display capture (`raw/`) is deleted once the window video exists. 10 fps, full resolution: roughly 3–8 MB per minute. |
+| 13 | Video | The **window-only video is kept** with the recording and expires with it (§2 #11). The full-display capture (`raw/`) is deleted once the window video exists. 10 fps, full resolution: about 9 MB per minute (measured: 48 s of a 1392×1048 Chrome window → 7.7 MB). |
 | 14 | Recording titles | Taken automatically from the first narration sentence. |
 | 15 | First run | Setup window: Screen Recording → Microphone → Connect Claude Code → optional 5-second test (§3.0). |
 | 16 | Sharing with teammates | Not in v1. |

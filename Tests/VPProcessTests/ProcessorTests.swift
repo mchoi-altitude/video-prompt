@@ -54,21 +54,26 @@ private let resize: [RawEvent] = [
 @Test func processesWindowRecordingEndToEnd() async throws {
     let paths = tempPathsForProcess()
     let id = try await makeRaw(paths, events: resize + [.stroke(seg: 1, t0: 2.8, t1: 4.0, points: circle(), tool: .pen),
-                                                        .cursor(seg: 1, t: 4.1, p: Point(x: 80, y: 280))])
+                                                        .click(seg: 1, t: 4.1, p: Point(x: 80, y: 280))])
     let store = Store(paths: paths)
     let meta = try await Processor(store: store, paths: paths, transcriber: StubTranscriber(result: stubWords), calendar: utc).process(id: id)
     #expect(meta.status == .reviewing)
     #expect(meta.title == "So, the settings page")
     let m = try store.manifest(id)
-    #expect(m.frames.filter { $0.time < 6 }.allSatisfy { $0.width == 400 })
-    #expect(m.frames.filter { $0.time >= 6 }.allSatisfy { $0.width == 300 })
-    #expect(m.frames.contains { $0.time >= 6 })
+    // The video is the largest the window got (400×300); after the resize the rest is padded.
+    #expect(m.video.width == 400 && m.video.height == 300 && m.video.fps == 10)
+    #expect(abs(m.duration - 12) < 0.3)
     #expect(m.strokes.first?.description.hasPrefix("circled the area (") == true)
     #expect(m.strokes.first?.bbox == [20, 230, 100, 270])
-    #expect(m.frames.first { $0.reasons.contains("drawing") }?.cursor == [60, 250])
-    #expect(FileManager.default.fileExists(atPath: paths.recording(id).appending(path: "prompt.md").path))
+    #expect(m.clicks == [ManifestClick(t: 4.1, x: 60, y: 250)])
+    #expect(FileManager.default.fileExists(atPath: paths.recording(id).appending(path: "timeline.md").path))
     #expect(!FileManager.default.fileExists(atPath: paths.raw(id).path))
-    #expect(m.frames.allSatisfy { FileManager.default.fileExists(atPath: paths.recording(id).appending(path: $0.file).path) })
+    for f in ["video.mp4", "overview.jpg", "timeline.md"] {
+        #expect(FileManager.default.fileExists(atPath: paths.recording(id).appending(path: f).path))
+    }
+    let timeline = try String(contentsOf: paths.recording(id).appending(path: "timeline.md"), encoding: .utf8)
+    #expect(timeline.contains("🖱 Clicked at (60,250)"))
+    #expect(timeline.contains("circled the area"))
     #expect(meta.sizeBytes > 0)
 }
 
@@ -78,21 +83,19 @@ private let resize: [RawEvent] = [
     let meta = try await Processor(store: Store(paths: paths), paths: paths, transcriber: nil, calendar: utc).process(id: id)
     #expect(meta.status == .reviewing)
     #expect(meta.title == "Recording 14:14")
-    let prompt = try String(contentsOf: paths.recording(id).appending(path: "prompt.md"), encoding: .utf8)
+    let prompt = try String(contentsOf: paths.recording(id).appending(path: "timeline.md"), encoding: .utf8)
     #expect(prompt.contains("_(no narration was detected)_"))
 }
 
-@Test func hiddenWindowFrameIsSkipped() async throws {
+@Test func hiddenWindowIsMarked() async throws {
     let paths = tempPathsForProcess()
     let id = try await makeRaw(paths, events: [
         .window(seg: 1, t: 0, frame: win, visible: true),
         .window(seg: 1, t: 3, frame: win, visible: false),
         .window(seg: 1, t: 5, frame: win, visible: true)])
-    // Sentence midpoint at 4.0 asks for a frame while the window is hidden.
     let words = [Word(start: 3.5, end: 4.5, text: " Hidden now.")]
     _ = try await Processor(store: Store(paths: paths), paths: paths, transcriber: StubTranscriber(result: words), calendar: utc).process(id: id)
     let m = try Store(paths: paths).manifest(id)
-    #expect(!m.frames.contains { $0.time >= 3 && $0.time < 5 })
     #expect(m.timeline.contains { if case .windowHidden = $0 { true } else { false } })
 }
 
@@ -105,6 +108,7 @@ private let resize: [RawEvent] = [
     let m = try Store(paths: paths).manifest(id)
     #expect(abs((m.strokes.first?.end ?? 0) - 13) < 0.2)
     #expect(abs(m.duration - 24) < 0.3)
+    #expect(m.timeline.contains { if case let .pause(t) = $0 { abs(t - 12) < 0.2 } else { false } })
 }
 
 @Test func failureKeepsRaw() async throws {
@@ -126,11 +130,11 @@ func tempPathsForProcess() -> Paths { Paths(root: tempDir()) }
     // 100 pt of the window hang off the left edge of the 640×400 display.
     let id = try await makeRaw(paths, events: [
         .window(seg: 1, t: 0, frame: Rect(x: -100, y: 30, w: 400, h: 300), visible: true),
-        .cursor(seg: 1, t: 0.4, p: Point(x: 50, y: 280))])
+        .click(seg: 1, t: 0.4, p: Point(x: 50, y: 280))])
     _ = try await Processor(store: Store(paths: paths), paths: paths, transcriber: nil, calendar: utc).process(id: id)
-    let first = try #require(try Store(paths: paths).manifest(id).frames.first)
-    #expect(first.width == 300)
-    #expect(first.cursor == [50, 250])
+    let m = try Store(paths: paths).manifest(id)
+    #expect(m.video.width == 300)                       // only the on-screen part
+    #expect(m.clicks.first.map { [$0.x, $0.y] } == [50, 250])
 }
 
 @Test func segmentNumbersComeFromFileNames() async throws {
@@ -152,7 +156,6 @@ func tempPathsForProcess() -> Paths { Paths(root: tempDir()) }
     _ = try await Processor(store: Store(paths: paths), paths: paths, transcriber: nil, calendar: utc).process(id: id)
     let m = try Store(paths: paths).manifest(id)
     #expect(m.strokes.map(\.tool) == [.pen])          // the arrow was undone
-    #expect(!m.frames.contains { abs($0.time - 5.8) < 0.01 && $0.reasons == ["drawing"] })
 }
 
 @Test func keepRawWhenAsked() async throws {

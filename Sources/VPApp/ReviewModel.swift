@@ -2,16 +2,16 @@ import Combine
 import Foundation
 import VPCore
 
-/// The review panel: transcript, frames to keep, note, and where the recording will go.
+/// The review panel: video preview, transcript, note, and where the recording will go.
 @MainActor
 public final class ReviewModel: ObservableObject {
     public let id: String
-    public let frames: [ManifestFrame]
+    /// The window video, for the preview player.
+    public let videoURL: URL
     public let duration: Double
     public let mode: CaptureMode
     public let recordingDir: URL
     @Published public var transcript: String
-    @Published public var removed: Set<Int> = []
     @Published public var note = ""
     public let waiter: Waiter?
     private let original: String
@@ -19,7 +19,7 @@ public final class ReviewModel: ObservableObject {
     public init(id: String, store: Store, waiter: Waiter?) throws {
         let m = try store.manifest(id)
         self.id = id
-        frames = m.frames
+        videoURL = store.paths.recording(id).appending(path: m.video.file)
         duration = m.duration
         mode = m.mode
         recordingDir = store.paths.recording(id)
@@ -37,11 +37,9 @@ public final class ReviewModel: ObservableObject {
         return "Goes to: claude — \(cwd) (waiting for this)"
     }
 
-    public var keptCount: Int { frames.count - removed.count }
-
     public var edits: ReviewEdits {
         let t = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         let n = note.trimmingCharacters(in: .whitespacesAndNewlines)
-        return ReviewEdits(transcriptText: t == original ? nil : t, removedFrames: removed, note: n.isEmpty ? nil : n)
+        return ReviewEdits(transcriptText: t == original ? nil : t, note: n.isEmpty ? nil : n)
     }
 }

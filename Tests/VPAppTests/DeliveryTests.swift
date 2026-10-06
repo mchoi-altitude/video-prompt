@@ -11,9 +11,9 @@ private func setup(alive: Bool = true) throws -> (Delivery, Paths, Store, FakePa
     return (d, p, store, pb, t, id)
 }
 
-@Test func referenceIsQuotedAtPrompt() {
+@Test func referencePointsAtTimeline() {
     let p = Paths(root: URL(fileURLWithPath: "/Users/x/Library/Application Support/VideoPrompt"))
-    #expect(reference(for: "abc", paths: p) == #"@"/Users/x/Library/Application Support/VideoPrompt/recordings/abc/prompt.md""#)
+    #expect(reference(for: "abc", paths: p) == #"@"/Users/x/Library/Application Support/VideoPrompt/recordings/abc/timeline.md""#)
 }
 
 @Test func sendDeliversToMostRecentWaiter() throws {

@@ -10,35 +10,6 @@ public func segmentOffsets(durations: [Int: Double]) -> [Int: Double] {
     return out
 }
 
-public struct FrameCandidate: Sendable, Equatable {
-    public var time: Double
-    public var reasons: [String]
-}
-
-private func round2(_ x: Double) -> Double { (x * 100).rounded() / 100 }
-
-/// Picks keyframes by priority, keeping them `minGap` apart (port of `choose_frame_times`).
-public func chooseFrameTimes(duration: Double, scenes: [Double], strokeEnds: [Double], sentences: [Sentence],
-                             maxFrames: Int = 24, minGap: Double = 1.5) -> [FrameCandidate] {
-    let end = max(0, duration - 0.3)
-    var candidates: [(prio: Int, t: Double, reason: String)] = [(9, duration > 1 ? 0.5 : 0, "start"), (8, end, "end")]
-    candidates += strokeEnds.map { (5, min($0 + 0.3, end), "drawing") }
-    candidates += scenes.map { (3, min($0 + 0.4, end), "scene change") }
-    candidates += sentences.map { (2, min(($0.start + $0.end) / 2, end), "narration") }
-
-    var chosen: [FrameCandidate] = []
-    // Stable sort by priority, highest first, like Python's sorted().
-    for c in candidates.enumerated().sorted(by: { ($0.element.prio, -$0.offset) > ($1.element.prio, -$1.offset) }).map(\.element) {
-        if let i = chosen.firstIndex(where: { abs($0.time - c.t) < minGap }) {
-            if !chosen[i].reasons.contains(c.reason) { chosen[i].reasons.append(c.reason) }
-            continue
-        }
-        if chosen.count >= maxFrames { continue }
-        chosen.append(FrameCandidate(time: round2(c.t), reasons: [c.reason]))
-    }
-    return chosen.sorted { $0.time < $1.time }
-}
-
 public struct WindowSample: Sendable, Equatable, Codable {
     public var t: Double
     public var frame: Rect
@@ -98,26 +69,14 @@ public func describeStroke(_ pts: [[Int]], tool: StrokeTool) -> (bbox: [Int], te
         if pts.count > 8 && gap < 0.3 * max(bw, bh, 1) && min(bw, bh) > 15 {
             return (bbox, "circled the area (\(bbox[0]),\(bbox[1]))–(\(bbox[2]),\(bbox[3]))")
         }
+        // A hand-drawn loop that doesn't close: the path is far longer than the gap between its ends.
+        let path = zip(pts, pts.dropFirst()).reduce(0.0) { $0 + hypot(Double($1.1[0] - $1.0[0]), Double($1.1[1] - $1.0[1])) }
+        if pts.count > 8 && path > 1.8 * max(gap, 1) && min(bw, bh) > 15 {
+            return (bbox, "drew a curved mark around (\(bbox[0]),\(bbox[1]))–(\(bbox[2]),\(bbox[3]))")
+        }
         if bh < 0.2 * max(bw, 1) {
             return (bbox, "underlined/marked horizontally from (\(bbox[0]),\(bbox[1])) to (\(bbox[2]),\(bbox[3]))")
         }
         return (bbox, "drew a line from (\(start[0]),\(start[1])) to (\(end[0]),\(end[1]))")
     }
-}
-
-public struct CursorSample: Sendable, Equatable {
-    public var t: Double
-    public var p: [Int]
-    public init(t: Double, p: [Int]) { self.t = t; self.p = p }
-}
-
-/// Cursor position shown in a frame at `t` (port of `_cursor_at`): the latest sample no more
-/// than 0.2 s after and 1.5 s before `t`.
-public func cursor(at t: Double, in samples: [CursorSample]) -> [Int]? {
-    var best: [Int]?
-    for s in samples.sorted(by: { $0.t < $1.t }) {
-        if s.t > t + 0.2 { break }
-        if t - s.t <= 1.5 { best = s.p }
-    }
-    return best
 }

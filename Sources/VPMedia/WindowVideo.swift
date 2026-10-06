@@ -122,9 +122,6 @@ func waitUntilReady(_ input: AVAssetWriterInput, timeout: Double = 15) async thr
     }
 }
 
-/// Frames per second for capture and the window video.
-public let VideoFPS = 10
-
 func clipRect(_ r: Rect, to b: Rect) -> Rect? {
     let x0 = max(r.x, b.x), y0 = max(r.y, b.y), x1 = min(r.x + r.w, b.x + b.w), y1 = min(r.y + r.h, b.y + b.h)
     return x1 > x0 && y1 > y0 ? Rect(x: x0, y: y0, w: x1 - x0, h: y1 - y0) : nil

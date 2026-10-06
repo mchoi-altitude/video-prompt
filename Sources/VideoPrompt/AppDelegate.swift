@@ -51,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var timers: [Timer] = []
     private var subs: Set<AnyCancellable> = []
     private var lastCursor: Point?
+    private var clickMonitor: Any?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(handleURL(_:reply:)),
@@ -109,6 +110,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Task { await self.controller.tick() }
             }
         })
+        // Clicks anywhere (global mouse monitoring needs no permission); logged only while recording.
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, case .recording(paused: false) = self.controller.state else { return }
+                let p = ScreenGeometry.topLeft(NSEvent.mouseLocation, primaryHeight: Screens.primaryHeight)
+                self.controller.log(.click(p), hostTime: ProcessInfo.processInfo.systemUptime)
+            }
+        }
         timers.append(Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.sampleWhileRecording() }
         })

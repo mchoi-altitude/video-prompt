@@ -6,7 +6,7 @@ public protocol Pasteboard: Sendable { func setString(_ s: String) }
 
 /// What to paste into Claude Code: quoted, because the data folder path has a space.
 public func reference(for id: String, paths: Paths) -> String {
-    "@\"\(paths.recording(id).appending(path: "prompt.md").path)\""
+    "@\"\(paths.recording(id).appending(path: "timeline.md").path)\""
 }
 
 public enum SendOutcome: Equatable, Sendable {

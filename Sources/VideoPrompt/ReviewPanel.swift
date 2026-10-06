@@ -1,11 +1,12 @@
 import AppKit
+import AVKit
 import SwiftUI
 import VPApp
 import VPCore
 
 enum ReviewChoice { case primary, copyReference, discard, close }
 
-/// Transcript, keyframes, note, destination; Return triggers the primary button.
+/// Video preview, transcript, note, destination; Return triggers the primary button.
 @MainActor
 final class ReviewPanel: NSObject, NSWindowDelegate {
     private var panel: NSPanel?
@@ -51,7 +52,6 @@ final class ReviewPanel: NSObject, NSWindowDelegate {
 struct ReviewView: View {
     @ObservedObject var model: ReviewModel
     let onChoice: (ReviewChoice) -> Void
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -66,14 +66,9 @@ struct ReviewView: View {
                     .font(.system(size: 14)).frame(height: 76)
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.3)))
             }
-            Text("Keyframes").font(.system(size: 13, weight: .medium))
-                + Text(" · \(model.keptCount) of \(model.frames.count) will be sent").font(.system(size: 13)).foregroundColor(.secondary)
-            ScrollView {
-                LazyVGrid(columns: columns, spacing: 10) {
-                    ForEach(model.frames, id: \.index) { f in frameCard(f) }
-                }
-            }
-            .frame(maxHeight: 260)
+            VideoPreview(url: model.videoURL)
+                .frame(height: 300)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
             VStack(alignment: .leading, spacing: 6) {
                 Text("Typed note").font(.system(size: 13, weight: .medium)) + Text(" · optional").font(.system(size: 13)).foregroundColor(.secondary)
                 TextField("e.g. same fix on the Billing tab", text: $model.note).textFieldStyle(.roundedBorder)
@@ -99,32 +94,18 @@ struct ReviewView: View {
     private var modeLabel: String {
         switch model.mode { case .window: "Chrome window"; case .screen: "whole screen"; case .area: "selected area" }
     }
+}
 
-    @ViewBuilder private func frameCard(_ f: ManifestFrame) -> some View {
-        let off = model.removed.contains(f.index)
-        VStack(alignment: .leading, spacing: 6) {
-            ZStack(alignment: .topTrailing) {
-                if let img = NSImage(contentsOf: model.recordingDir.appending(path: f.file)) {
-                    Image(nsImage: img).resizable().aspectRatio(contentMode: .fill)
-                        .frame(height: 104).clipped().clipShape(RoundedRectangle(cornerRadius: 6))
-                } else {
-                    RoundedRectangle(cornerRadius: 6).fill(Color.gray.opacity(0.3)).frame(height: 104)
-                }
-                Button(off ? "Undo" : "×") {
-                    if off { model.removed.remove(f.index) } else { model.removed.insert(f.index) }
-                }
-                .buttonStyle(.borderless)
-                .padding(.horizontal, 8).padding(.vertical, 3)
-                .background(Capsule().fill(Color.white.opacity(0.92)))
-                .foregroundStyle(.black)
-                .padding(6)
-                .accessibilityLabel(off ? "Keep this frame" : "Remove this frame")
-            }
-            HStack(spacing: 6) {
-                Text(String(format: "%d:%02d", Int(f.time) / 60, Int(f.time) % 60)).font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary)
-                Text(f.reasons.joined(separator: ", ")).font(.system(size: 12)).strikethrough(off)
-            }
-        }
-        .opacity(off ? 0.4 : 1)
+/// Plays the recording video in the review panel (the same file Claude gets).
+struct VideoPreview: NSViewRepresentable {
+    let url: URL
+    func makeNSView(context: Context) -> AVPlayerView {
+        let v = AVPlayerView()
+        v.controlsStyle = .inline
+        v.player = AVPlayer(url: url)
+        v.player?.play()
+        return v
     }
+    func updateNSView(_ v: AVPlayerView, context: Context) {}
+    static func dismantleNSView(_ v: AVPlayerView, coordinator: ()) { v.player?.pause() }
 }

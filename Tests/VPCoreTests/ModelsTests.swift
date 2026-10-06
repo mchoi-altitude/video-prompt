@@ -16,7 +16,7 @@ import Testing
 
 @Test func timelineItemRoundTripsWithKind() throws {
     let items: [TimelineItem] = [.speech(time: 1, end: 2, text: "Hi."), .drawing(time: 2, description: "x"),
-                                 .clear(time: 3), .frame(time: 4, index: 1), .windowHidden(time: 5)]
+                                 .clear(time: 3), .click(time: 4, x: 10, y: 20), .pause(time: 4.5), .windowHidden(time: 5)]
     let data = try JSON.encoder.encode(items)
     #expect(String(decoding: data, as: UTF8.self).contains("\"kind\" : \"windowHidden\""))
     #expect(try JSON.decoder.decode([TimelineItem].self, from: data) == items)
@@ -32,5 +32,10 @@ import Testing
 
 @Test func undoEventRoundTrips() throws {
     let e = RawEvent.undo(seg: 1, t: 3)
+    #expect(try JSON.decoder.decode(RawEvent.self, from: JSON.encoder.encode(e)) == e)
+}
+
+@Test func clickEventRoundTrips() throws {
+    let e = RawEvent.click(seg: 1, t: 2, p: Point(x: 3, y: 4))
     #expect(try JSON.decoder.decode(RawEvent.self, from: JSON.encoder.encode(e)) == e)
 }

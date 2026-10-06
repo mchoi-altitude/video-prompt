@@ -97,26 +97,16 @@ extension MCPServer {
         }
     }
 
-    /// The prompt as text, then every keyframe as an inline image, in order. Marks it fetched.
+    /// timeline.md as text, then the overview contact sheet inline. Marks it fetched.
     func recording(_ id: String) -> JSONValue {
         let dir = store.paths.recording(id)
-        guard let m = try? store.manifest(id) else {
+        guard let m = try? store.manifest(id),
+              let timeline = try? String(contentsOf: dir.appending(path: "timeline.md"), encoding: .utf8) else {
             return Tools.text("Recording \(id) could not be read.", isError: true)
         }
-        let plan = Tools.attachmentPlan(sizes: m.frames.map { ($0.width, $0.height) }, budgetTokens: imageBudgetTokens)
-        let attached = Set(plan.inline)
-        var prompt = renderPrompt(m, recordingDir: dir, framesAttached: true)
-        let skipped = m.frames.enumerated().filter { !attached.contains($0.offset) }.map(\.element)
-        if !skipped.isEmpty {
-            prompt += "\n## Frames not attached\n\nThese didn't fit in one reply. Open them with your Read tool if you need them:\n\n"
-                + skipped.map { "- Frame \($0.index): `\(dir.appending(path: $0.file).path)`" }.joined(separator: "\n") + "\n"
-        }
-        var content: [JSONValue] = [.object(["type": .string("text"), "text": .string(prompt)])]
-        for (i, f) in m.frames.enumerated() where attached.contains(i) {
-            guard var data = try? Data(contentsOf: dir.appending(path: f.file)) else { continue }
-            if plan.scale < 1, let small = Tools.shrinkJPEG(data, maxPixel: Int((Double(max(f.width, f.height)) * plan.scale).rounded())) {
-                data = small
-            }
+        var content: [JSONValue] = [.object(["type": .string("text"), "text": .string(
+            timeline + "\nRecording id for get_frames: `\(id)`. The overview image follows.\n")])]
+        if let data = try? Data(contentsOf: dir.appending(path: m.overview)) {
             content.append(.object(["type": .string("image"), "data": .string(data.base64EncodedString()), "mimeType": .string("image/jpeg")]))
         }
         try? store.update(id) { $0.fetchedByCwd = cwd }

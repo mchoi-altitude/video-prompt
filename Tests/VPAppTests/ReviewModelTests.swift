@@ -15,12 +15,12 @@ import VPTestSupport
     #expect(none.destination == "No session is waiting. It’s saved as your latest recording.")
 }
 
-@Test @MainActor func editsCarryRemovedFramesAndNote() throws {
+@Test @MainActor func editsCarryNote() throws {
     let p = Paths(root: tempDir()); let id = try reviewingRecording(p)
     let m = try ReviewModel(id: id, store: Store(paths: p), waiter: nil)
-    m.removed.insert(2)
     m.note = "Same on Billing."
-    #expect(m.edits == ReviewEdits(transcriptText: nil, removedFrames: [2], note: "Same on Billing."))
+    #expect(m.edits == ReviewEdits(transcriptText: nil, note: "Same on Billing."))
+    #expect(m.videoURL.lastPathComponent == "video.mp4")
 }
 
 @Test @MainActor func unchangedTranscriptIsNotAnEdit() throws {

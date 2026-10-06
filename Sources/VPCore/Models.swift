@@ -1,5 +1,8 @@
 import Foundation
 
+/// Frames per second for capture and the recording video (spec §2 #19). The one place to change it.
+public let VideoFPS = 10
+
 public struct Rect: Codable, Sendable, Equatable {
     public var x, y, w, h: Double
     public init(x: Double, y: Double, w: Double, h: Double) { self.x = x; self.y = y; self.w = w; self.h = h }
@@ -35,6 +38,8 @@ public enum RawEvent: Codable, Sendable, Equatable {
     case cursor(seg: Int, t: Double, p: Point)
     case stroke(seg: Int, t0: Double, t1: Double, points: [Point], tool: StrokeTool)
     case clear(seg: Int, t: Double)
+    /// A left-mouse click (global point).
+    case click(seg: Int, t: Double, p: Point)
     /// The user undid their most recent stroke.
     case undo(seg: Int, t: Double)
     case window(seg: Int, t: Double, frame: Rect, visible: Bool)
@@ -49,6 +54,7 @@ public enum RawEvent: Codable, Sendable, Equatable {
         case "stroke": self = .stroke(seg: seg, t0: try c.decode(Double.self, forKey: .t0), t1: try c.decode(Double.self, forKey: .t1),
                                       points: try c.decode([Point].self, forKey: .points), tool: try c.decode(StrokeTool.self, forKey: .tool))
         case "clear": self = .clear(seg: seg, t: try c.decode(Double.self, forKey: .t))
+        case "click": self = .click(seg: seg, t: try c.decode(Double.self, forKey: .t), p: try c.decode(Point.self, forKey: .p))
         case "undo": self = .undo(seg: seg, t: try c.decode(Double.self, forKey: .t))
         case "window": self = .window(seg: seg, t: try c.decode(Double.self, forKey: .t), frame: try c.decode(Rect.self, forKey: .frame),
                                       visible: try c.decode(Bool.self, forKey: .visible))
@@ -66,6 +72,8 @@ public enum RawEvent: Codable, Sendable, Equatable {
             try c.encode(t1, forKey: .t1); try c.encode(points, forKey: .points); try c.encode(tool, forKey: .tool)
         case let .clear(seg, t):
             try c.encode("clear", forKey: .type); try c.encode(seg, forKey: .seg); try c.encode(t, forKey: .t)
+        case let .click(seg, t, p):
+            try c.encode("click", forKey: .type); try c.encode(seg, forKey: .seg); try c.encode(t, forKey: .t); try c.encode(p, forKey: .p)
         case let .undo(seg, t):
             try c.encode("undo", forKey: .type); try c.encode(seg, forKey: .seg); try c.encode(t, forKey: .t)
         case let .window(seg, t, frame, visible):
@@ -81,29 +89,30 @@ public struct Sentence: Codable, Sendable, Equatable {
     public init(start: Double, end: Double, text: String) { self.start = start; self.end = end; self.text = text }
 }
 
-public struct ManifestFrame: Codable, Sendable, Equatable {
-    public var index: Int
-    public var time: Double
-    public var reasons: [String]
-    /// Relative to the recording folder, e.g. `frames/frame_01_00m00.5s.jpg`.
-    public var file: String
-    public var width, height: Int
-    public var cursor: [Int]?
-    public init(index: Int, time: Double, reasons: [String], file: String, width: Int, height: Int, cursor: [Int]? = nil) {
-        self.index = index; self.time = time; self.reasons = reasons; self.file = file
-        self.width = width; self.height = height; self.cursor = cursor
-    }
-}
-
 public struct ManifestStroke: Codable, Sendable, Equatable {
     public var start, end: Double
     public var tool: StrokeTool
     public var bbox: [Int]
     public var description: String
-    public var frameIndex: Int?
-    public init(start: Double, end: Double, tool: StrokeTool, bbox: [Int], description: String, frameIndex: Int? = nil) {
-        self.start = start; self.end = end; self.tool = tool; self.bbox = bbox
-        self.description = description; self.frameIndex = frameIndex
+    public init(start: Double, end: Double, tool: StrokeTool, bbox: [Int], description: String) {
+        self.start = start; self.end = end; self.tool = tool; self.bbox = bbox; self.description = description
+    }
+}
+
+/// A click, in pixels of the recording video.
+public struct ManifestClick: Codable, Sendable, Equatable {
+    public var t: Double
+    public var x, y: Int
+    public init(t: Double, x: Int, y: Int) { self.t = t; self.x = x; self.y = y }
+}
+
+/// The window-only recording video.
+public struct VideoInfo: Codable, Sendable, Equatable {
+    public var file: String
+    public var width, height, fps: Int
+    public var hasAudio: Bool
+    public init(file: String, width: Int, height: Int, fps: Int, hasAudio: Bool) {
+        self.file = file; self.width = width; self.height = height; self.fps = fps; self.hasAudio = hasAudio
     }
 }
 
@@ -111,16 +120,17 @@ public enum TimelineItem: Codable, Sendable, Equatable {
     case speech(time: Double, end: Double, text: String)
     case drawing(time: Double, description: String)
     case clear(time: Double)
-    case frame(time: Double, index: Int)
+    case click(time: Double, x: Int, y: Int)
+    case pause(time: Double)
     case windowHidden(time: Double)
 
     public var time: Double {
         switch self {
-        case let .speech(t, _, _), let .drawing(t, _), let .clear(t), let .frame(t, _), let .windowHidden(t): t
+        case let .speech(t, _, _), let .drawing(t, _), let .clear(t), let .click(t, _, _), let .pause(t), let .windowHidden(t): t
         }
     }
 
-    private enum K: String, CodingKey { case kind, time, end, text, description, index }
+    private enum K: String, CodingKey { case kind, time, end, text, description, x, y }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: K.self)
@@ -129,7 +139,8 @@ public enum TimelineItem: Codable, Sendable, Equatable {
         case "speech": self = .speech(time: t, end: try c.decode(Double.self, forKey: .end), text: try c.decode(String.self, forKey: .text))
         case "drawing": self = .drawing(time: t, description: try c.decode(String.self, forKey: .description))
         case "clear": self = .clear(time: t)
-        case "frame": self = .frame(time: t, index: try c.decode(Int.self, forKey: .index))
+        case "click": self = .click(time: t, x: try c.decode(Int.self, forKey: .x), y: try c.decode(Int.self, forKey: .y))
+        case "pause": self = .pause(time: t)
         case "windowHidden": self = .windowHidden(time: t)
         case let other: throw DecodingError.dataCorruptedError(forKey: .kind, in: c, debugDescription: "unknown timeline kind \(other)")
         }
@@ -142,7 +153,8 @@ public enum TimelineItem: Codable, Sendable, Equatable {
         case let .speech(_, end, text): try c.encode("speech", forKey: .kind); try c.encode(end, forKey: .end); try c.encode(text, forKey: .text)
         case let .drawing(_, d): try c.encode("drawing", forKey: .kind); try c.encode(d, forKey: .description)
         case .clear: try c.encode("clear", forKey: .kind)
-        case let .frame(_, i): try c.encode("frame", forKey: .kind); try c.encode(i, forKey: .index)
+        case let .click(_, x, y): try c.encode("click", forKey: .kind); try c.encode(x, forKey: .x); try c.encode(y, forKey: .y)
+        case .pause: try c.encode("pause", forKey: .kind)
         case .windowHidden: try c.encode("windowHidden", forKey: .kind)
         }
     }
@@ -153,14 +165,19 @@ public struct Manifest: Codable, Sendable, Equatable {
     public var duration: Double
     public var mode: CaptureMode
     public var transcript: [Sentence]
-    public var frames: [ManifestFrame]
+    public var video: VideoInfo
+    /// Contact sheet file, relative to the recording folder.
+    public var overview: String
+    public var overviewSecondsPerTile: Int
     public var strokes: [ManifestStroke]
+    public var clicks: [ManifestClick]
     public var timeline: [TimelineItem]
     public var note: String?
-    public init(id: String, duration: Double, mode: CaptureMode, transcript: [Sentence], frames: [ManifestFrame],
-                strokes: [ManifestStroke], timeline: [TimelineItem], note: String? = nil) {
-        self.id = id; self.duration = duration; self.mode = mode; self.transcript = transcript
-        self.frames = frames; self.strokes = strokes; self.timeline = timeline; self.note = note
+    public init(id: String, duration: Double, mode: CaptureMode, transcript: [Sentence], video: VideoInfo, overview: String,
+                overviewSecondsPerTile: Int, strokes: [ManifestStroke], clicks: [ManifestClick], timeline: [TimelineItem], note: String? = nil) {
+        self.id = id; self.duration = duration; self.mode = mode; self.transcript = transcript; self.video = video
+        self.overview = overview; self.overviewSecondsPerTile = overviewSecondsPerTile; self.strokes = strokes
+        self.clicks = clicks; self.timeline = timeline; self.note = note
     }
 }
 
@@ -193,9 +210,8 @@ public struct RecordingMeta: Codable, Sendable, Equatable {
 /// What the user changed in the review panel.
 public struct ReviewEdits: Codable, Sendable, Equatable {
     public var transcriptText: String?
-    public var removedFrames: Set<Int>
     public var note: String?
-    public init(transcriptText: String? = nil, removedFrames: Set<Int> = [], note: String? = nil) {
-        self.transcriptText = transcriptText; self.removedFrames = removedFrames; self.note = note
+    public init(transcriptText: String? = nil, note: String? = nil) {
+        self.transcriptText = transcriptText; self.note = note
     }
 }

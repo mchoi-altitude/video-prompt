@@ -1,20 +1,15 @@
 import Foundation
 import VPCore
 
-/// Applies the review panel's edits to a processed recording and rewrites `manifest.json` and
-/// `prompt.md`. Removed frames are deleted from disk; remaining frame numbers stay as they were
-/// so "frame 3" still means what the user saw. Marks the recording `ready`. With `deliverTo`
-/// (Send), it is addressed to that waiting session, and any earlier fetch is cleared so the
-/// waiter picks it up. Returns the `prompt.md` URL.
+/// Applies the review panel's edits (transcript, note) and rewrites `manifest.json` and
+/// `timeline.md`. Marks the recording `ready`. With `deliverTo` (Send), it is addressed to that
+/// waiting session, and any earlier fetch is cleared so the waiter picks it up. Returns the
+/// `timeline.md` URL.
 @discardableResult
-public func finalize(id: String, edits: ReviewEdits, store: Store, paths: Paths, deliverTo: Waiter? = nil) throws -> URL {
+public func finalize(id: String, edits: ReviewEdits, store: Store, paths: Paths, deliverTo: Waiter? = nil,
+                     vpFrames: String = Processor.defaultVPFramesPath) throws -> URL {
     let dir = paths.recording(id)
     var m = try store.manifest(id)
-    for f in m.frames where edits.removedFrames.contains(f.index) {
-        try? FileManager.default.removeItem(at: dir.appending(path: f.file))
-    }
-    m.frames.removeAll { edits.removedFrames.contains($0.index) }
-    m.timeline.removeAll { if case let .frame(_, i) = $0 { edits.removedFrames.contains(i) } else { false } }
     if let text = edits.transcriptText?.trimmingCharacters(in: .whitespacesAndNewlines),
        text != m.transcript.map(\.text).joined(separator: " ") {
         m.transcript = text.isEmpty ? [] : [Sentence(start: 0, end: m.duration, text: text)]
@@ -24,8 +19,8 @@ public func finalize(id: String, edits: ReviewEdits, store: Store, paths: Paths,
     }
     if let note = edits.note { m.note = note.isEmpty ? nil : note }
     try writeJSON(m, to: dir.appending(path: "manifest.json"))
-    let prompt = dir.appending(path: "prompt.md")
-    try writeAtomically(Data(renderPrompt(m, recordingDir: dir).utf8), to: prompt)
+    let prompt = dir.appending(path: "timeline.md")
+    try writeAtomically(Data(renderTimeline(m, recordingDir: dir, vpFrames: vpFrames).utf8), to: prompt)
     try store.update(id) {
         $0.sizeBytes = folderSize(dir)
         $0.status = .ready

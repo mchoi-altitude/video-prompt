@@ -118,9 +118,7 @@ struct RecordingsView: View {
     }
 
     @ViewBuilder private func thumbnail(_ id: String) -> some View {
-        let frames = paths.recording(id).appending(path: "frames")
-        let first = (try? FileManager.default.contentsOfDirectory(atPath: frames.path))?.sorted().first
-        if let first, let img = NSImage(contentsOf: frames.appending(path: first)) {
+        if let img = NSImage(contentsOf: paths.recording(id).appending(path: "overview.jpg")) {
             Image(nsImage: img).resizable().aspectRatio(contentMode: .fill)
         } else {
             Rectangle().fill(Color.gray.opacity(0.3))

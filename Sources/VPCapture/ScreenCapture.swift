@@ -2,6 +2,7 @@ import AVFoundation
 import Foundation
 import ScreenCaptureKit
 import VPApp
+import VPCore
 
 /// ScreenCaptureKit display capture with the microphone, one `SCRecordingOutput` per segment.
 /// Our own control bar is excluded; the drawing overlay is captured, so marks are in the video.
@@ -39,7 +40,7 @@ public final class ScreenCaptureBackend: NSObject, CaptureBackend, SCStreamOutpu
         let scale = Double(filter.pointPixelScale)
         config.width = Int(Double(display.width) * scale)
         config.height = Int(Double(display.height) * scale)
-        config.minimumFrameInterval = CMTime(value: 1, timescale: 30)
+        config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(VideoFPS))
         config.showsCursor = true
         config.capturesAudio = false
         config.captureMicrophone = true

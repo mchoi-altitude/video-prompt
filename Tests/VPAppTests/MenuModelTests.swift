@@ -43,7 +43,7 @@ private let waiter = Waiter(pid: 5, cwd: "/Users/x/acme-console", startedAt: .no
 @Test func recordingsShowsCount() {
     let items = menuItems(waiting: nil, chrome: chrome, lastMode: .window, recordingCount: 5)
     #expect(items.first { $0.action == .recordings }?.shortcut == "5")
-    #expect(items.map(\.action).suffix(3) == [.recordings, .settings, .quit])
+    #expect(items.map(\.action).suffix(3) == [.recordings, .setup, .quit])
 }
 
 @Test @MainActor func watcherSeesLiveWaiter() throws {

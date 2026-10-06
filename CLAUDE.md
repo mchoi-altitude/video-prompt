@@ -55,6 +55,8 @@ handed to a Claude Code session.
 
 - No Xcode: SwiftPM + Command Line Tools. Tests: `scripts/test.sh` (Testing.framework paths;
   `--no-parallel`, because parallel video tests starve the hardware encoder and hang).
+- After changing a struct/enum's stored layout, incremental test builds can crash silently or fail
+  oddly: `rm -rf .build` before believing a failure.
 - In zsh, `log` is a builtin. Read the app's logs with `/usr/bin/log show --predicate
   'subsystem == "ai.altitudeiq.videoprompt"'`.
 - Don't run `screencapture` or other permission-needing commands from the terminal: macOS then

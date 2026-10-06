@@ -2,7 +2,7 @@ import Foundation
 import VPCore
 
 public enum MenuAction: Equatable, Sendable {
-    case header, stop, recordChrome, recordScreen, recordArea, recordOtherWindow, recordings, settings, quit
+    case header, stop, recordChrome, recordScreen, recordArea, recordOtherWindow, recordings, setup, quit
 }
 
 public struct MenuItemModel: Equatable, Sendable {
@@ -59,7 +59,7 @@ public func menuItems(waiting: Waiter?, chrome: WindowInfo?, lastMode: CaptureMo
     items.append(MenuItemModel(title: "Record selected area…", shortcut: short(.area), checked: lastMode == .area, enabled: canRecord, action: .recordArea))
     items.append(MenuItemModel(title: "Record another window…", enabled: canRecord, action: .recordOtherWindow))
     items.append(MenuItemModel(title: "Recordings…", shortcut: String(recordingCount), action: .recordings))
-    items.append(MenuItemModel(title: "Settings…", action: .settings))
+    items.append(MenuItemModel(title: "Setup…", action: .setup))
     items.append(MenuItemModel(title: "Quit Video Prompt", action: .quit))
     return items
 }

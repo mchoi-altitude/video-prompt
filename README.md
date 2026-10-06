@@ -6,6 +6,24 @@ Claude Code as a prompt.
 **Status:** early. We're aligning on the [user journey](docs/user-journey.md) before building
 the app. The first target is a native macOS menu-bar app.
 
+## Internal beta (team members)
+
+You need access to this repo, plus the GitHub CLI (`gh auth login`), Homebrew and Claude Code.
+To install, or later to update, run:
+
+```bash
+cd "$(mktemp -d)" && gh release download beta -R mchoi-altitude/video-prompt -p VideoPrompt-beta.zip \
+  && unzip -q VideoPrompt-beta.zip && ./video-prompt-beta/install.sh
+```
+
+The installer copies the app to /Applications, installs whisper.cpp (it asks first) and the speech
+model (checksum-verified), opens the app, and prints the two Claude Code `/plugin` commands. The
+first run shows a setup window. This beta isn't notarized, so install it only with the command
+above, not by downloading the zip in a browser. Report problems in this repo's Issues.
+Uninstall: quit the app, then `rm -rf "/Applications/Video Prompt.app" ~/Library/Application\ Support/VideoPrompt`.
+
+Publishing a beta (maintainers): `scripts/release-beta.sh` (or `--dry-run` to build only).
+
 ## Developing
 
 Needs macOS 14+ and Swift 6.3 (the Command Line Tools are enough for the core; the app will need

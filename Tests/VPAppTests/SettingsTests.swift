@@ -47,3 +47,13 @@ private func freshDefaults() -> UserDefaults {
     let r = Rect(x: 40, y: 64, w: 740, h: 560)
     #expect(ScreenGeometry.topLeft(ScreenGeometry.appKit(r, primaryHeight: 900), primaryHeight: 900) == r)
 }
+
+@Test func olderSettingsKeepTheirValues() {
+    let d = freshDefaults()
+    // Saved by a build that had no `setupShown` yet.
+    d.set(Data(#"{"retention":{"keepLast":{"_0":20}},"lastMode":"area","drawingsFade":true,"reviewStep":true}"#.utf8), forKey: "settings")
+    let s = SettingsStore(defaults: d).settings
+    #expect(s.lastMode == .area)
+    #expect(s.retention == .keepLast(20))
+    #expect(s.setupShown == false)
+}

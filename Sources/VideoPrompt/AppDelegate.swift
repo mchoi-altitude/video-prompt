@@ -45,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let countdown = CountdownWindow()
     private let review = ReviewPanel()
     private let recordingsWindow = RecordingsWindow()
+    private let setupWindow = SetupWindow()
     private let toast = Toast()
     private var tracker: WindowTracker?
     private var targetScreen: NSScreen?
@@ -121,6 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         timers.append(Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.sampleWhileRecording() }
         })
+        if !settings.settings.setupShown { showSetup() }
         timers.append(Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { try? self?.lifecycle.hourly(now: .now) }
         })
@@ -135,11 +137,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .recordScreen: startScreen()
         case .recordArea: Task { await startArea() }
         case .recordOtherWindow: Task { await startOtherWindow() }
-        case .recordings, .settings: showRecordings()
+        case .recordings: showRecordings()
+        case .setup: showSetup()
         case .quit: NSApp.terminate(nil)
         case .stop: stop()
         case .header: break
         }
+    }
+
+    private func showSetup() {
+        setupWindow.show(paths: paths) { [weak self] in self?.settings.settings.setupShown = true }
     }
 
     private func showRecordings() {

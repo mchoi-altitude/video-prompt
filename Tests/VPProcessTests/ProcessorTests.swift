@@ -84,7 +84,7 @@ private let resize: [RawEvent] = [
     #expect(meta.status == .reviewing)
     #expect(meta.title == "Recording 14:14")
     let prompt = try String(contentsOf: paths.recording(id).appending(path: "timeline.md"), encoding: .utf8)
-    #expect(prompt.contains("_(no narration was detected)_"))
+    #expect(prompt.contains("transcription unavailable"))
 }
 
 @Test func hiddenWindowIsMarked() async throws {
@@ -163,4 +163,21 @@ func tempPathsForProcess() -> Paths { Paths(root: tempDir()) }
     let id = try await makeRaw(paths, events: resize)
     _ = try await Processor(store: Store(paths: paths), paths: paths, transcriber: nil, calendar: utc, keepRaw: true).process(id: id)
     #expect(FileManager.default.fileExists(atPath: paths.raw(id).appending(path: "seg_001.mov").path))
+}
+
+@Test func unavailableTranscriberIsNotSilence() async throws {
+    let paths = tempPathsForProcess()
+    let id = try await makeRaw(paths, events: resize)       // has an audio track
+    _ = try await Processor(store: Store(paths: paths), paths: paths, transcriber: nil, calendar: utc).process(id: id)
+    let t = try String(contentsOf: paths.recording(id).appending(path: "timeline.md"), encoding: .utf8)
+    #expect(t.contains("transcription unavailable"))
+    #expect(!t.contains("no narration was detected"))
+}
+
+@Test func silentAudioSaysNoNarration() async throws {
+    let paths = tempPathsForProcess()
+    let id = try await makeRaw(paths, events: resize)
+    _ = try await Processor(store: Store(paths: paths), paths: paths, transcriber: StubTranscriber(result: []), calendar: utc).process(id: id)
+    let t = try String(contentsOf: paths.recording(id).appending(path: "timeline.md"), encoding: .utf8)
+    #expect(t.contains("_(no narration was detected)_"))
 }

@@ -20,7 +20,8 @@ ask() {  # ask "question" → 0 for yes; no terminal → no
 [ -d "$HERE/$APP" ] || { echo "Can't find $APP next to install.sh" >&2; exit 1; }
 
 say "1/4 Installing $APP into $PREFIX"
-pkill -x VideoPrompt 2>/dev/null && sleep 1 || true
+# Quit the running copy before replacing it (not for test installs into another folder).
+[ -n "${VP_PREFIX:-}" ] || { pkill -x VideoPrompt 2>/dev/null && sleep 1 || true; }
 mkdir -p "$PREFIX"
 rm -rf "$PREFIX/$APP"
 ditto "$HERE/$APP" "$PREFIX/$APP"

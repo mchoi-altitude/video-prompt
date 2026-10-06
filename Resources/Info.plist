@@ -13,5 +13,10 @@
 	<key>LSUIElement</key><true/>
 	<key>NSMicrophoneUsageDescription</key><string>Video Prompt records your narration so Claude can read what you said. Audio is transcribed on this Mac and never uploaded.</string>
 	<key>NSHighResolutionCapable</key><true/>
+	<key>CFBundleURLTypes</key>
+	<array><dict>
+		<key>CFBundleURLName</key><string>ai.altitudeiq.videoprompt</string>
+		<key>CFBundleURLSchemes</key><array><string>videoprompt</string></array>
+	</dict></array>
 </dict>
 </plist>

@@ -54,3 +54,10 @@ private func setup(alive: Bool = true) throws -> (Delivery, Paths, Store, FakePa
     #expect(t.trashed == [id])
     #expect(store.list().isEmpty)
 }
+
+@Test func quietSaveMakesReadyWithoutTouchingClipboard() throws {
+    let (d, _, store, pb, _, id) = try setup()
+    try d.save(id, edits: ReviewEdits())
+    #expect(try store.meta(id).status == .ready)
+    #expect(pb.value == nil)
+}

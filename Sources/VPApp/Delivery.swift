@@ -47,4 +47,9 @@ public struct Delivery: Sendable {
     public func copyReference(_ id: String, edits: ReviewEdits) throws { try saveAndCopy(id, edits: edits) }
 
     public func discard(_ id: String) throws { try store.trash([id]) }
+
+    /// Saves without copying anything (automation; leaves the user's clipboard alone).
+    public func save(_ id: String, edits: ReviewEdits) throws {
+        try finalize(id: id, edits: edits, store: store, paths: paths)
+    }
 }

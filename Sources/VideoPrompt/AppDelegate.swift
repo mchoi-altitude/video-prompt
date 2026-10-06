@@ -23,8 +23,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var waiters = Waiters(paths: paths)
     private lazy var watcher = WaiterWatcher(waiters: waiters)
     private let windows = CGWindowListSource()
-    private lazy var makeProcessor: @Sendable () -> Processor = { [paths, store] in
-        Processor(store: store, paths: paths, transcriber: WhisperCLITranscriber.fromEnvironment(paths: paths))
+    /// Developer settings (defaults write ai.altitudeiq.videoprompt <key> -bool YES), off by default.
+    private let automationEnabled = UserDefaults.standard.bool(forKey: "automation")
+    private let keepRaw = UserDefaults.standard.bool(forKey: "keepRawForExperiments")
+    private var skipNextReview = false
+    private lazy var makeProcessor: @Sendable () -> Processor = { [paths, store, keepRaw] in
+        Processor(store: store, paths: paths, transcriber: WhisperCLITranscriber.fromEnvironment(paths: paths), keepRaw: keepRaw)
     }
     private let capture = ScreenCaptureBackend()
     private lazy var controller = RecordingController(paths: paths, store: store, capture: capture,
@@ -47,6 +51,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var timers: [Timer] = []
     private var subs: Set<AnyCancellable> = []
     private var lastCursor: Point?
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(handleURL(_:reply:)),
+                                                     forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
+    }
+
+    /// videoprompt://record?mode=chrome|screen, videoprompt://stop[?review=0]. Ignored unless the
+    /// "automation" developer setting is on: otherwise any web page could start a recording.
+    @objc private func handleURL(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
+        guard let s = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
+              let url = URLComponents(string: s) else { return }
+        guard automationEnabled else { log.notice("ignored automation URL (automation is off)"); return }
+        let q = Dictionary(uniqueKeysWithValues: (url.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+        log.notice("automation \(url.host ?? "-", privacy: .public) \(q.description, privacy: .public)")
+        switch url.host {
+        case "record": q["mode"] == "screen" ? startScreen() : startChrome()
+        case "stop":
+            skipNextReview = q["review"] == "0"
+            stop()
+        default: break
+        }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         log.notice("launched, data root \(self.paths.root.path, privacy: .public)")
@@ -201,7 +227,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             toast.show("Transcribing on this Mac…", seconds: 30)
         case let .reviewing(id):
             toast.hide()
-            if settings.settings.reviewStep { showReview(id) } else { finish(id, .primary, edits: ReviewEdits()) }
+            if skipNextReview {
+                skipNextReview = false
+                try? delivery.save(id, edits: ReviewEdits())
+                controller.reset()
+                recordingsModel.reload()
+            } else if settings.settings.reviewStep { showReview(id) } else { finish(id, .primary, edits: ReviewEdits()) }
         case let .failed(message):
             countdown.hide(); controlBar.hide(); overlay.hide(); tracker = nil
             toast.show(message, seconds: 8)

@@ -13,9 +13,11 @@ public struct Processor: Sendable {
     let paths: Paths
     let transcriber: Transcriber?
     let calendar: Calendar
+    /// Experiments only: keep `raw/` so the recording can be reprocessed differently.
+    let keepRaw: Bool
 
-    public init(store: Store, paths: Paths, transcriber: Transcriber?, calendar: Calendar = .current) {
-        self.store = store; self.paths = paths; self.transcriber = transcriber; self.calendar = calendar
+    public init(store: Store, paths: Paths, transcriber: Transcriber?, calendar: Calendar = .current, keepRaw: Bool = false) {
+        self.store = store; self.paths = paths; self.transcriber = transcriber; self.calendar = calendar; self.keepRaw = keepRaw
     }
 
     public func process(id: String, now: Date = .now) async throws -> RecordingMeta {
@@ -120,7 +122,7 @@ public struct Processor: Sendable {
                                 note: session.note)
         try writeJSON(manifest, to: dir.appending(path: "manifest.json"))
         try writeAtomically(Data(renderPrompt(manifest, recordingDir: dir).utf8), to: dir.appending(path: "prompt.md"))
-        try fm.removeItem(at: raw)
+        if !keepRaw { try fm.removeItem(at: raw) }
 
         var out = meta
         out.status = .reviewing

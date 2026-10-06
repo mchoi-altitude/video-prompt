@@ -154,3 +154,10 @@ func tempPathsForProcess() -> Paths { Paths(root: tempDir()) }
     #expect(m.strokes.map(\.tool) == [.pen])          // the arrow was undone
     #expect(!m.frames.contains { abs($0.time - 5.8) < 0.01 && $0.reasons == ["drawing"] })
 }
+
+@Test func keepRawWhenAsked() async throws {
+    let paths = tempPathsForProcess()
+    let id = try await makeRaw(paths, events: resize)
+    _ = try await Processor(store: Store(paths: paths), paths: paths, transcriber: nil, calendar: utc, keepRaw: true).process(id: id)
+    #expect(FileManager.default.fileExists(atPath: paths.raw(id).appending(path: "seg_001.mov").path))
+}

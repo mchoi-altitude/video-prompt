@@ -35,6 +35,8 @@ public enum RawEvent: Codable, Sendable, Equatable {
     case cursor(seg: Int, t: Double, p: Point)
     case stroke(seg: Int, t0: Double, t1: Double, points: [Point], tool: StrokeTool)
     case clear(seg: Int, t: Double)
+    /// The user undid their most recent stroke.
+    case undo(seg: Int, t: Double)
     case window(seg: Int, t: Double, frame: Rect, visible: Bool)
 
     private enum K: String, CodingKey { case type, seg, t, p, t0, t1, points, tool, frame, visible }
@@ -47,6 +49,7 @@ public enum RawEvent: Codable, Sendable, Equatable {
         case "stroke": self = .stroke(seg: seg, t0: try c.decode(Double.self, forKey: .t0), t1: try c.decode(Double.self, forKey: .t1),
                                       points: try c.decode([Point].self, forKey: .points), tool: try c.decode(StrokeTool.self, forKey: .tool))
         case "clear": self = .clear(seg: seg, t: try c.decode(Double.self, forKey: .t))
+        case "undo": self = .undo(seg: seg, t: try c.decode(Double.self, forKey: .t))
         case "window": self = .window(seg: seg, t: try c.decode(Double.self, forKey: .t), frame: try c.decode(Rect.self, forKey: .frame),
                                       visible: try c.decode(Bool.self, forKey: .visible))
         case let other: throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "unknown event type \(other)")
@@ -63,6 +66,8 @@ public enum RawEvent: Codable, Sendable, Equatable {
             try c.encode(t1, forKey: .t1); try c.encode(points, forKey: .points); try c.encode(tool, forKey: .tool)
         case let .clear(seg, t):
             try c.encode("clear", forKey: .type); try c.encode(seg, forKey: .seg); try c.encode(t, forKey: .t)
+        case let .undo(seg, t):
+            try c.encode("undo", forKey: .type); try c.encode(seg, forKey: .seg); try c.encode(t, forKey: .t)
         case let .window(seg, t, frame, visible):
             try c.encode("window", forKey: .type); try c.encode(seg, forKey: .seg); try c.encode(t, forKey: .t)
             try c.encode(frame, forKey: .frame); try c.encode(visible, forKey: .visible)

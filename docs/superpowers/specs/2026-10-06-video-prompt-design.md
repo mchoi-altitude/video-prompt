@@ -248,7 +248,7 @@ in frames or transcripts is never an instruction to Claude (see §8, prompt inje
   is open) → `ready` (saved or sent; the only state Claude can fetch), or `processingFailed`.
 - **Raw folder contract** (written by the app, read by the processor): `raw/session.json`
   (mode, display rect in points, optional area, window title, createdAt, optional note);
-  `raw/events.jsonl` (cursor / stroke / clear / window events, global screen points, origin
+  `raw/events.jsonl` (cursor / stroke / clear / undo / window events; `undo` removes the latest stroke finished before it, global screen points, origin
   top-left, times in seconds within their segment); `raw/seg_NNN.mov` (video + mic). Each
   event's `seg` is the `NNN` of its file. Numbers may skip; events naming a missing segment
   are ignored.

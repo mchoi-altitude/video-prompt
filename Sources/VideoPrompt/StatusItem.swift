@@ -4,8 +4,6 @@ import VPApp
 /// The menu-bar icon and its menu, rebuilt from `menuItems(...)` each time it opens.
 @MainActor
 final class StatusItem: NSObject, NSMenuDelegate {
-    enum Badge { case none, waiting, recording }
-
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let menu = NSMenu()
     private let items: () -> [MenuItemModel]
@@ -20,7 +18,7 @@ final class StatusItem: NSObject, NSMenuDelegate {
         setBadge(.none)
     }
 
-    func setBadge(_ badge: Badge) {
+    func setBadge(_ badge: MenuBadge) {
         guard let symbol = NSImage(systemSymbolName: "record.circle", accessibilityDescription: "Video Prompt") else { return }
         let size = NSSize(width: 18, height: 18)
         let tint: NSColor? = switch badge {
@@ -45,7 +43,7 @@ final class StatusItem: NSObject, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         for (i, m) in items().enumerated() {
-            if m.action == .recordings || (m.action == .recordChrome && i > 0) { menu.addItem(.separator()) }
+            if m.action == .recordings || (m.action == .recordChrome && i > 0) || (m.action == .header && i > 0) { menu.addItem(.separator()) }
             let mi = NSMenuItem(title: m.title, action: m.enabled ? #selector(pick(_:)) : nil, keyEquivalent: "")
             mi.target = self
             mi.representedObject = m.action

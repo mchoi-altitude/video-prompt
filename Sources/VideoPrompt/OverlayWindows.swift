@@ -21,8 +21,16 @@ final class OverlayController {
     init(model: DrawingModel) { self.model = model }
 
     var drawOn = false {
-        didSet { for p in panels { p.ignoresMouseEvents = !drawOn } }
+        didSet {
+            for p in panels {
+                p.ignoresMouseEvents = !drawOn
+                // A fully clear window lets clicks fall through; a near-invisible fill catches them.
+                p.backgroundColor = drawOn ? NSColor(white: 0, alpha: 0.001) : .clear
+            }
+        }
     }
+
+    var isShowing: Bool { !panels.isEmpty }
 
     func show() {
         hide()
@@ -62,6 +70,7 @@ final class OverlayController {
 
 final class OverlayView: NSView {
     weak var controller: OverlayController?
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     private static let red = NSColor(srgbRed: 0xE5 / 255, green: 0x48 / 255, blue: 0x4D / 255, alpha: 1)
 
     private var primaryHeight: Double { Double(NSScreen.screens.first?.frame.height ?? 0) }

@@ -7,6 +7,7 @@ public enum EventKind: Sendable {
     /// A finished stroke; the `hostTime` passed to `log` is its end.
     case stroke(startHost: Double, points: [Point], tool: StrokeTool)
     case clear
+    case undo
     case window(Rect, visible: Bool)
 }
 
@@ -61,6 +62,7 @@ public final class RawRecorder: @unchecked Sendable {
             case let .cursor(p): e = .cursor(seg: segment, t: t, p: p)
             case let .stroke(s, pts, tool): e = .stroke(seg: segment, t0: max(0, s - start), t1: t, points: pts, tool: tool)
             case .clear: e = .clear(seg: segment, t: t)
+            case .undo: e = .undo(seg: segment, t: t)
             case let .window(r, visible): e = .window(seg: segment, t: t, frame: r, visible: visible)
             }
             let enc = JSONEncoder()

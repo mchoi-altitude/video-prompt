@@ -48,16 +48,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         try? lifecycle.onLaunch(now: .now)
         statusItem = StatusItem(items: { [unowned self] in
             menuItems(waiting: watcher.current, chrome: frontmostChromeWindow(windows.windows()),
-                      lastMode: settings.settings.lastMode, recordingCount: store.list().count)
+                      lastMode: settings.settings.lastMode, recordingCount: store.list().count, busy: MenuBusy(controller.state))
         }, onAction: { [unowned self] in handle($0) })
-        hotkey = Hotkey { [weak self] in self?.startLastMode() }
+        hotkey = Hotkey { [weak self] in
+            guard let self else { return }
+            if MenuBusy(self.controller.state) == .recording { self.stop() } else { self.startLastMode() }
+        }
         controller.excludedWindowIDs = { [unowned self] in [controlBar.windowID] }
         overlay.onStroke = { [unowned self] s in
             controller.log(.stroke(startHost: s.startHost, points: s.points, tool: s.tool), hostTime: s.endHost ?? s.startHost)
         }
         controller.$drawOn.sink { [unowned self] on in overlay.drawOn = on }.store(in: &subs)
-        controller.$state.sink { [unowned self] s in stateChanged(s) }.store(in: &subs)
-        watcher.$current.sink { [unowned self] _ in refreshBadge() }.store(in: &subs)
+        // @Published emits before storing; handle on the next main-queue turn so the stored
+        // value is current and a reset() inside the handler isn't overwritten.
+        controller.$state.receive(on: DispatchQueue.main).sink { [unowned self] s in stateChanged(s) }.store(in: &subs)
+        watcher.$current.receive(on: DispatchQueue.main).sink { [unowned self] _ in refreshBadge() }.store(in: &subs)
 
         timers.append(Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -82,11 +87,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .recordScreen: startScreen()
         case .recordArea: Task { await startArea() }
         case .recordOtherWindow: Task { await startOtherWindow() }
-        case .recordings: recordingsWindow.show(model: recordingsModel, paths: paths, pasteboard: SystemPasteboard()) { [weak self] id in self?.retry(id) }
-        case .settings: recordingsWindow.show(model: recordingsModel, paths: paths, pasteboard: SystemPasteboard()) { [weak self] id in self?.retry(id) }
+        case .recordings, .settings: showRecordings()
         case .quit: NSApp.terminate(nil)
+        case .stop: stop()
         case .header: break
         }
+    }
+
+    private func showRecordings() {
+        recordingsWindow.show(model: recordingsModel, paths: paths, pasteboard: SystemPasteboard(),
+                              onRetry: { [weak self] id in self?.retry(id) },
+                              onReview: { [weak self] id in self?.showReview(id) })
     }
 
     private func startLastMode() {
@@ -98,7 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private var isDone: Bool { switch controller.state { case .reviewing, .failed: true; default: false } }
+    private var isDone: Bool { if case .failed = controller.state { true } else { false } }
 
     private func startChrome() {
         guard let w = frontmostChromeWindow(windows.windows()) else { toast.show("Chrome isn't open."); return }
@@ -131,10 +142,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func begin(mode: CaptureMode, target: CaptureTarget, screen: NSScreen) {
+        guard controller.state == .idle || isDone else { return }
         if isDone { controller.reset() }
         targetScreen = screen
         tracker = nil
-        controlBar.show(on: screen)
+        controlBar.show(on: screen, visible: false)  // exists (so it can be excluded) but hidden until recording
         Task { await controller.start(mode: mode, target: target) }
     }
 
@@ -157,10 +169,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch s {
         case let .countdown(n):
             countdown.show(n, label: label(settings.settings.lastMode), on: targetScreen)
+        case .starting:
+            countdown.hide()  // before ScreenCaptureKit's first frame
         case .recording:
             countdown.hide()
+            controlBar.show(on: targetScreen, visible: true)
             tracker?.sample()
-            overlay.show()
+            if !overlay.isShowing { overlay.show() }
         case .processing:
             controlBar.hide(); overlay.hide(); tracker = nil
             toast.show("Transcribing on this Mac…", seconds: 30)
@@ -171,7 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             countdown.hide(); controlBar.hide(); overlay.hide(); tracker = nil
             toast.show(message, seconds: 8)
             controller.reset()
-        case .idle, .starting:
+        case .idle:
             break
         }
     }
@@ -181,10 +196,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshBadge() {
-        switch controller.state {
-        case .countdown, .recording: statusItem?.setBadge(.recording)
-        default: statusItem?.setBadge(watcher.current == nil ? .none : .waiting)
-        }
+        statusItem?.setBadge(menuBadge(state: controller.state, waiting: watcher.current != nil))
     }
 
     // MARK: Review and delivery
@@ -217,6 +229,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .discard:
                 try delivery.discard(id)
                 toast.show("Discarded (moved to the Trash).")
+            case .close:
+                try delivery.copyReference(id, edits: edits)
+                toast.show("Saved to Recordings, and the reference is on your clipboard.")
             }
         } catch {
             toast.show("Couldn't save the recording: \(error.localizedDescription)", seconds: 8)

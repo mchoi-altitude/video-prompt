@@ -142,3 +142,15 @@ func tempPathsForProcess() -> Paths { Paths(root: tempDir()) }
     _ = try await Processor(store: Store(paths: paths), paths: paths, transcriber: nil, calendar: utc).process(id: id)
     #expect(abs((try Store(paths: paths).manifest(id).strokes.first?.end ?? 0) - 13) < 0.2)
 }
+
+@Test func undoneStrokeIsNotDescribed() async throws {
+    let paths = tempPathsForProcess()
+    let id = try await makeRaw(paths, events: resize + [
+        .stroke(seg: 1, t0: 2.8, t1: 4.0, points: circle(), tool: .pen),
+        .stroke(seg: 1, t0: 5.0, t1: 5.5, points: circle(), tool: .arrow),
+        .undo(seg: 1, t: 5.8)])
+    _ = try await Processor(store: Store(paths: paths), paths: paths, transcriber: nil, calendar: utc).process(id: id)
+    let m = try Store(paths: paths).manifest(id)
+    #expect(m.strokes.map(\.tool) == [.pen])          // the arrow was undone
+    #expect(!m.frames.contains { abs($0.time - 5.8) < 0.01 && $0.reasons == ["drawing"] })
+}

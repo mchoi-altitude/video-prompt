@@ -99,6 +99,17 @@ public final class RecordingController: ObservableObject {
     /// Something the user did, in host time; dropped unless recording.
     public func log(_ kind: EventKind, hostTime: Double) { recorder?.log(kind, hostTime: hostTime) }
 
+    /// Undo on the control bar: off the screen, and out of what Claude is told.
+    public func undoDrawing(hostTime: Double) {
+        drawing.undo()
+        log(.undo, hostTime: hostTime)
+    }
+
+    public func clearDrawings(hostTime: Double) {
+        drawing.clear()
+        log(.clear, hostTime: hostTime)
+    }
+
     public func togglePause() async {
         guard !busy, case let .recording(paused) = state, let recorder else { return }
         busy = true

@@ -18,14 +18,16 @@ final class ControlBarPanel {
         panel.hasShadow = false
         panel.isMovableByWindowBackground = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.contentView = NSHostingView(rootView: ControlBarView(controller: controller, onStop: onStop))
+        panel.contentView = FirstMouseHostingView(rootView: ControlBarView(controller: controller, onStop: onStop))
     }
 
-    func show(on screen: NSScreen?) {
-        let s = screen ?? NSScreen.main
-        if let f = s?.visibleFrame {
+    /// `visible: false` orders it in at alpha 0 so its window id exists for capture exclusion.
+    func show(on screen: NSScreen?, visible: Bool) {
+        if !visible || !panel.isVisible, let f = (screen ?? NSScreen.main)?.visibleFrame {
             panel.setFrameOrigin(NSPoint(x: f.midX - panel.frame.width / 2, y: f.maxY - panel.frame.height - 12))
         }
+        panel.alphaValue = visible ? 1 : 0
+        panel.ignoresMouseEvents = !visible
         panel.orderFrontRegardless()
     }
 
@@ -57,8 +59,8 @@ struct ControlBarView: View {
                     }
                     .pickerStyle(.segmented).labelsHidden().frame(width: 110)
                     .onChange(of: tool) { _, t in controller.drawing.tool = t }
-                    bar("arrow.uturn.backward", "Undo") { controller.drawing.undo() }
-                    bar("trash", "Clear drawings") { controller.drawing.clear() }
+                    bar("arrow.uturn.backward", "Undo") { controller.undoDrawing(hostTime: ProcessInfo.processInfo.systemUptime) }
+                    bar("trash", "Clear drawings") { controller.clearDrawings(hostTime: ProcessInfo.processInfo.systemUptime) }
                 }
                 Button(action: onStop) {
                     RoundedRectangle(cornerRadius: 2).fill(Color.black).frame(width: 12, height: 12)
@@ -94,4 +96,9 @@ struct ControlBarView: View {
         }
         .buttonStyle(.plain).help(label).accessibilityLabel(label)
     }
+}
+
+/// Buttons respond to the first click even though the panel never becomes key.
+final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }

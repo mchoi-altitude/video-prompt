@@ -204,3 +204,19 @@ private func gated(_ cap: GatedCapture, clock: ManualClock = ManualClock()) -> (
     guard case .failed = c.state else { Issue.record("state \(c.state)"); return }
     #expect(!FileManager.default.fileExists(atPath: paths.recording(id).path))
 }
+
+@Test @MainActor func clearAndUndoAreLogged() async throws {
+    let clock = ManualClock()
+    let cap = FakeCapture(fixture: nil)
+    let paths = Paths(root: tempDir())
+    let c = RecordingController(paths: paths, store: Store(paths: paths), capture: cap, clock: { clock.now },
+                                makeProcessor: { Processor(store: Store(paths: paths), paths: paths, transcriber: nil) },
+                                settings: SettingsStore(defaults: UserDefaults(suiteName: "vp-\(UUID().uuidString)")!))
+    await startRecording(c)
+    c.undoDrawing(hostTime: 1)
+    c.clearDrawings(hostTime: 2)
+    let id = try #require(c.recordingID)
+    let events = try String(contentsOf: paths.raw(id).appending(path: "events.jsonl"), encoding: .utf8)
+        .split(whereSeparator: \.isNewline).map { try JSON.decoder.decode(RawEvent.self, from: Data($0.utf8)) }
+    #expect(events == [.undo(seg: 1, t: 1), .clear(seg: 1, t: 2)])
+}

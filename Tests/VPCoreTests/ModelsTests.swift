@@ -29,3 +29,8 @@ import Testing
     #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path) == ["s.json"])
     #expect(try readJSON(Sentence.self, from: dir.appending(path: "s.json")).text == "Hi.")
 }
+
+@Test func undoEventRoundTrips() throws {
+    let e = RawEvent.undo(seg: 1, t: 3)
+    #expect(try JSON.decoder.decode(RawEvent.self, from: JSON.encoder.encode(e)) == e)
+}

@@ -11,6 +11,7 @@ public struct RecordingRow: Identifiable, Equatable, Sendable {
     public var size: String
     public var sent: Bool
     public var failed: Bool
+    public var inReview: Bool
 }
 
 private func lastComponent(_ path: String) -> String { URL(fileURLWithPath: path).lastPathComponent }
@@ -62,7 +63,8 @@ public final class RecordingsModel: ObservableObject {
             RecordingRow(id: m.id, title: m.title,
                          meta: "\(fmt.string(from: m.createdAt)) · \(String(format: "%d:%02d", Int(m.duration) / 60, Int(m.duration) % 60))",
                          status: statusText(m), expires: expiryText(m, policy: policy, now: t), size: megabytes(m.sizeBytes),
-                         sent: m.deliveredToCwd != nil || m.fetchedByCwd != nil, failed: m.status == .processingFailed)
+                         sent: m.deliveredToCwd != nil || m.fetchedByCwd != nil, failed: m.status == .processingFailed,
+                         inReview: m.status == .reviewing)
         }
         selected.formIntersection(Set(rows.map(\.id)))
         let total = metas.reduce(Int64(0)) { $0 + $1.sizeBytes }

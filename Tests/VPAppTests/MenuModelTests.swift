@@ -56,3 +56,34 @@ private let waiter = Waiter(pid: 5, cwd: "/Users/x/acme-console", startedAt: .no
     watcher.poll()
     #expect(watcher.current?.cwd == "/proj")
 }
+
+@Test func whileRecordingTheMenuOffersStopAndNoNewRecording() {
+    let items = menuItems(waiting: nil, chrome: chrome, lastMode: .window, recordingCount: 0, busy: .recording)
+    #expect(items.first?.action == .stop)
+    #expect(items.first?.title == "Stop recording")
+    let records: [MenuAction] = [.recordChrome, .recordScreen, .recordArea, .recordOtherWindow]
+    #expect(items.filter { records.contains($0.action) }.allSatisfy { !$0.enabled })
+}
+
+@Test func whileProcessingRecordItemsAreDisabledWithoutStop() {
+    let items = menuItems(waiting: nil, chrome: chrome, lastMode: .window, recordingCount: 0, busy: .processing)
+    #expect(!items.contains { $0.action == .stop })
+    #expect(items.filter { $0.action == .recordScreen }.allSatisfy { !$0.enabled })
+}
+
+@Test func badgeFollowsStateAndWaiter() {
+    #expect(menuBadge(state: .countdown(3), waiting: true) == .recording)
+    #expect(menuBadge(state: .starting, waiting: false) == .recording)
+    #expect(menuBadge(state: .recording(paused: true), waiting: false) == .recording)
+    #expect(menuBadge(state: .processing(id: "x"), waiting: false) == .none)
+    #expect(menuBadge(state: .idle, waiting: true) == .waiting)
+    #expect(menuBadge(state: .reviewing(id: "x"), waiting: true) == .waiting)
+}
+
+@Test func busyFromState() {
+    #expect(MenuBusy(.idle) == nil)
+    #expect(MenuBusy(.countdown(2)) == .recording)
+    #expect(MenuBusy(.processing(id: "x")) == .processing)
+    #expect(MenuBusy(.reviewing(id: "x")) == .processing)
+    #expect(MenuBusy(.failed("x")) == nil)
+}

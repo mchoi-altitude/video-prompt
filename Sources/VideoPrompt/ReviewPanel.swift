@@ -3,30 +3,49 @@ import SwiftUI
 import VPApp
 import VPCore
 
-enum ReviewChoice { case primary, copyReference, discard }
+enum ReviewChoice { case primary, copyReference, discard, close }
 
 /// Transcript, keyframes, note, destination; Return triggers the primary button.
 @MainActor
-final class ReviewPanel {
+final class ReviewPanel: NSObject, NSWindowDelegate {
     private var panel: NSPanel?
+    private var onClose: (() -> Void)?
 
     func show(_ model: ReviewModel, onChoice: @escaping (ReviewChoice) -> Void) {
+        close()
         let p = KeyPanel(contentRect: NSRect(x: 0, y: 0, width: 680, height: 640),
                          styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
         p.title = "Review recording"
         p.titlebarAppearsTransparent = true
         p.level = Levels.controls
         p.isReleasedWhenClosed = false
+        p.hidesOnDeactivate = false  // stays put when the user clicks into Chrome or the terminal
+        p.delegate = self
         p.contentView = NSHostingView(rootView: ReviewView(model: model, onChoice: { [weak self] c in
             self?.close(); onChoice(c)
         }))
+        onClose = { onChoice(.close) }  // the close button still saves the recording
         p.center()
         p.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         panel = p
+        // No text field focused, so Return goes to the default (primary) button.
+        DispatchQueue.main.async { p.makeFirstResponder(nil) }
     }
 
-    func close() { panel?.orderOut(nil); panel = nil }
+    func close() {
+        onClose = nil
+        panel?.delegate = nil
+        panel?.orderOut(nil)
+        panel = nil
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        let f = onClose
+        onClose = nil
+        panel = nil
+        f?()
+    }
 }
 
 struct ReviewView: View {

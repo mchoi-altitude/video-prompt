@@ -7,14 +7,15 @@ import VPCore
 final class RecordingsWindow {
     private var window: NSWindow?
 
-    func show(model: RecordingsModel, paths: Paths, pasteboard: VPApp.Pasteboard, onRetry: @escaping (String) -> Void) {
+    func show(model: RecordingsModel, paths: Paths, pasteboard: VPApp.Pasteboard, onRetry: @escaping (String) -> Void,
+              onReview: @escaping (String) -> Void) {
         model.reload()
         if let window { window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 520),
                          styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
         w.title = "Recordings"
         w.isReleasedWhenClosed = false
-        w.contentView = NSHostingView(rootView: RecordingsView(model: model, paths: paths, pasteboard: pasteboard, onRetry: onRetry))
+        w.contentView = NSHostingView(rootView: RecordingsView(model: model, paths: paths, pasteboard: pasteboard, onRetry: onRetry, onReview: onReview))
         w.center()
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -49,6 +50,7 @@ struct RecordingsView: View {
     let paths: Paths
     let pasteboard: VPApp.Pasteboard
     let onRetry: (String) -> Void
+    let onReview: (String) -> Void
     @State private var retention: RetentionChoice = .d3
 
     var body: some View {
@@ -104,6 +106,8 @@ struct RecordingsView: View {
             Text(row.size).font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary).frame(width: 64, alignment: .trailing)
             if row.failed {
                 Button("Retry") { onRetry(row.id) }
+            } else if row.inReview {
+                Button("Review") { onReview(row.id) }
             } else {
                 Button("Copy reference") { model.copyReference(row.id, pasteboard: pasteboard) }
             }

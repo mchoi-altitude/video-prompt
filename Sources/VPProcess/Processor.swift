@@ -66,6 +66,9 @@ public struct Processor: Sendable {
             case let .cursor(seg, t, p): if let o = offsets[seg] { cursorPts.append((o + t, p)) }
             case let .clear(seg, t): if let o = offsets[seg] { clears.append(round2(o + t)) }
             case let .stroke(seg, t0, t1, pts, tool): if let o = offsets[seg] { rawStrokes.append((o + t0, o + t1, pts, tool)) }
+            case let .undo(seg, t):
+                // Drop the latest stroke finished before the undo: it never meant anything.
+                if let o = offsets[seg], let i = rawStrokes.lastIndex(where: { $0.t1 <= o + t }) { rawStrokes.remove(at: i) }
             }
         }
         let timeline = CropTimeline(mode: session.mode, display: session.display, area: session.area, windowSamples: windows)

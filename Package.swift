@@ -7,8 +7,10 @@ let package = Package(
     targets: [
         .target(name: "VPCore"),
         .target(name: "VPMedia", dependencies: ["VPCore"]),
+        .target(name: "VPProcess", dependencies: ["VPCore", "VPMedia"]),
         .target(name: "VPTestSupport", dependencies: ["VPCore", "VPMedia"], path: "Tests/Support"),
         .testTarget(name: "VPCoreTests", dependencies: ["VPCore"], resources: [.copy("Golden")]),
+        .testTarget(name: "VPProcessTests", dependencies: ["VPProcess", "VPTestSupport"]),
         .testTarget(name: "VPMediaTests", dependencies: ["VPMedia", "VPTestSupport"]),
     ],
     swiftLanguageModes: [.v6]

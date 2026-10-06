@@ -32,8 +32,12 @@ public func makeOverview(video: URL, to url: URL, maxTiles: Int = 60, tileWidth:
     var images: [CGImage] = []
     for t in times { images.append(try await gen.image(at: CMTime(seconds: min(t, max(0, duration - 0.05)), preferredTimescale: 600)).image) }
     guard let first = images.first else { throw MediaError.noImage(0) }
-    let tw = tileWidth, th = Int((Double(first.height) * Double(tileWidth) / Double(first.width)).rounded())
     let cols = min(6, images.count), rows = (images.count + cols - 1) / cols, gap = 4
+    // Keep the sheet within 4000 px on its long edge (tall windows would make it huge).
+    let aspect = Double(first.height) / Double(first.width)
+    let natW = Double(cols * tileWidth), natH = Double(rows) * Double(tileWidth) * aspect
+    let fit = min(1, Double(4000 - (cols - 1) * gap) / natW, Double(4000 - (rows - 1) * gap) / natH)
+    let tw = max(16, Int((Double(tileWidth) * fit).rounded(.down))), th = max(16, Int((Double(tileWidth) * aspect * fit).rounded(.down)))
     let w = cols * tw + (cols - 1) * gap, h = rows * th + (rows - 1) * gap
     let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
                         bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
@@ -59,16 +63,18 @@ public func makeOverview(video: URL, to url: URL, maxTiles: Int = 60, tileWidth:
 }
 
 /// Frames between two timestamps (clamped to the video, at least one), at up to 10 fps, long
-/// edge scaled to `maxLongEdge`.
-public func extractFrames(video: URL, from: Double, to: Double, fps: Double, maxLongEdge: Int) async throws -> [VideoFrame] {
+/// edge scaled to `maxLongEdge`. More than `maxFrames` → spread evenly across the range instead.
+public func extractFrames(video: URL, from: Double, to: Double, fps: Double, maxLongEdge: Int,
+                          maxFrames: Int = 1000) async throws -> [VideoFrame] {
     let asset = AVURLAsset(url: video)
     let duration = try await asset.load(.duration).seconds
     let last = max(0, duration - 0.05)
     let lo = min(max(0, min(from, to)), last), hi = min(max(0, max(from, to)), last)
-    let step = 1 / min(max(fps, 0.1), Double(VideoFPS))
+    var step = 1 / min(max(fps, 0.01), Double(VideoFPS))
+    if hi > lo, (hi - lo) / step + 1 > Double(maxFrames) { step = (hi - lo) / Double(max(maxFrames - 1, 1)) }
     var times: [Double] = []
     var t = lo
-    while t <= hi + 1e-6 { times.append((t * 100).rounded() / 100); t += step }
+    while t <= hi + 1e-6, times.count < maxFrames { times.append((t * 100).rounded() / 100); t += step }
     let gen = AVAssetImageGenerator(asset: asset)
     gen.appliesPreferredTrackTransform = true
     gen.requestedTimeToleranceBefore = CMTime(seconds: 0.05, preferredTimescale: 600)

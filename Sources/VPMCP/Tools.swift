@@ -14,7 +14,7 @@ enum Tools {
 
     static let definitions: [JSONValue] = [
         tool("get_latest_recording",
-             "Get the user's most recent Video Prompt screen recording (narration, timeline and keyframe images). Use when the user says they recorded something, or says \"look at my recording\"."),
+             "Get the user's most recent Video Prompt screen recording: a timeline of what they said, drew and clicked (with timestamps) plus an overview image of the whole video. Use get_frames to look closer at any moment. Use when the user says they recorded something, or says \"look at my recording\"."),
         tool("list_recordings", "List the user's recent Video Prompt recordings with id, title, time and length.",
              ["limit": .object(["type": .string("integer"), "description": .string("How many to list (default 10)")])]),
         tool("get_recording", "Get one Video Prompt recording by id (from list_recordings).",
@@ -129,16 +129,18 @@ extension MCPServer {
     /// (shrunk, then thinned to an even spread keeping the first and last).
     func frames(id: String, manifest m: Manifest, from: Double, to: Double, fps: Double) async -> JSONValue {
         let video = store.paths.recording(id).appending(path: m.video.file)
-        let span = abs(to - from)
-        var rate = min(max(fps, 0.1), Double(VideoFPS))
-        if span * rate + 1 > 20 { rate = 19 / max(span, 0.01) }
-        guard let all = try? await extractFrames(video: video, from: from, to: to, fps: rate, maxLongEdge: 1568), !all.isEmpty else {
+        // Clamp to the recording, so "everything" (0…9999) spreads 20 frames across it.
+        let lo = min(max(0, min(from, to)), m.duration), hi = min(max(0, max(from, to)), m.duration)
+        let rate = min(max(fps, 0.01), Double(VideoFPS))
+        guard let all = try? await extractFrames(video: video, from: lo, to: hi, fps: rate, maxLongEdge: 1568, maxFrames: 20),
+              !all.isEmpty else {
             return Tools.text("Couldn't read frames from \(video.path).", isError: true)
         }
         let plan = Tools.attachmentPlan(sizes: all.map { ($0.width, $0.height) }, budgetTokens: imageBudgetTokens)
         let keep = Set(plan.inline)
-        var header = String(format: "Frames of recording %@ from %.1f s to %.1f s at %.1f fps (%d of %d shown).", id,
-                            min(from, to), max(from, to), rate, keep.count, all.count)
+        let spacing = all.count > 1 ? (all[all.count - 1].t - all[0].t) / Double(all.count - 1) : 0
+        var header = String(format: "Frames of recording %@ from %.1f s to %.1f s, one every %.2f s (%d of %d shown).", id,
+                            lo, hi, spacing, keep.count, all.count)
         if keep.count < all.count { header += " For the rest, ask for a narrower range or a lower fps." }
         var content: [JSONValue] = [.object(["type": .string("text"), "text": .string(header)])]
         for (i, f) in all.enumerated() where keep.contains(i) {

@@ -54,3 +54,24 @@ private func imageSize(_ url: URL) -> (Int, Int)? {
     let f = try await extractFrames(video: v, from: 0, to: 0, fps: 1, maxLongEdge: 1568)
     #expect(f.first?.width == 1568)
 }
+
+@Test func wholeRangeIsSpreadNotCollapsed() async throws {
+    let v = try await clip(12)
+    // "Everything" on a short clip: about 20 frames spread across it, not one.
+    let f = try await extractFrames(video: v, from: 0, to: 9999, fps: 10, maxLongEdge: 1568, maxFrames: 20)
+    #expect(f.count >= 18 && f.count <= 20)
+    #expect(f.first?.t == 0 && (f.last?.t ?? 0) > 11)
+}
+
+@Test func maxFramesHoldsForLongSpans() async throws {
+    let v = try await clip(240, size: (64, 40))
+    let f = try await extractFrames(video: v, from: 0, to: 240, fps: 10, maxLongEdge: 1568, maxFrames: 20)
+    #expect(f.count <= 20 && f.count >= 18)
+}
+
+@Test func overviewOfTallWindowStaysWithinLimits() async throws {
+    let v = try await clip(60, size: (200, 1100))
+    let out = tempDir().appending(path: "o.jpg")
+    let r = try await makeOverview(video: v, to: out)
+    #expect(max(r.width, r.height) <= 4000)
+}

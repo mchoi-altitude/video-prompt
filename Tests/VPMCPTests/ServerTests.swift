@@ -244,3 +244,19 @@ private func images(_ c: [[String: Any]]) -> Int { c.filter { $0["type"] as? Str
     let r = try await call(server(Paths(root: tempDir())), toolCall("get_frames", #"{"id":"nope","from":0,"to":1}"#))
     #expect((r["result"] as? [String: Any])?["isError"] as? Bool == true)
 }
+
+@Test func getFramesWholeRangeSpreadsAcrossVideo() async throws {
+    let p = Paths(root: tempDir())
+    try await addWithVideo(p, id: "r1", seconds: 12)
+    let c = content(try await call(server(p), toolCall("get_frames", #"{"from":0,"to":9999}"#)))
+    #expect(images(c) >= 10)
+    let header = c.first?["text"] as? String ?? ""
+    #expect(header.contains("to 12.0 s") || header.contains("to 11.9 s"))
+}
+
+@Test func latestDescriptionMentionsOverviewNotKeyframes() async throws {
+    let r = try await call(server(Paths(root: tempDir())), #"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#)
+    let tools = (r["result"] as? [String: Any])?["tools"] as? [[String: Any]] ?? []
+    let d = tools.first { $0["name"] as? String == "get_latest_recording" }?["description"] as? String ?? ""
+    #expect(!d.contains("keyframe") && d.contains("get_frames"))
+}

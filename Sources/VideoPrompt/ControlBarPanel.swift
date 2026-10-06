@@ -49,7 +49,7 @@ struct ControlBarView: View {
                 Text(timeLabel).font(.system(size: 14, design: .monospaced)).foregroundStyle(.white).frame(minWidth: 44, alignment: .leading)
                 bar(paused ? "play.fill" : "pause.fill", paused ? "Resume" : "Pause") { Task { await controller.togglePause() } }
                 Divider().frame(height: 22).overlay(Color.white.opacity(0.25))
-                bar("pencil.tip", "Draw (⌃⌥⌘D)", on: controller.drawOn) { controller.drawOn.toggle() }
+                bar("pencil.tip", "Draw (⌥D)", on: controller.drawOn) { controller.drawOn.toggle() }
                     .disabled(paused)
                 if controller.drawOn {
                     Picker("Tool", selection: $tool) {
@@ -79,8 +79,8 @@ struct ControlBarView: View {
 
     private var caption: String {
         if controller.showsLengthWarning { return "Long recordings give Claude many frames. Wrap up soon?" }
-        if controller.drawOn { return "Drawing · clicks don’t reach apps · ⌃⌥⌘D to stop" }
-        return "⌃⌥⌘D to draw · hidden from the recording"
+        if controller.drawOn { return "Drawing · clicks don’t reach apps · Esc to stop" }
+        return "⌥D to draw · hidden from the recording"
     }
 
     private var timeLabel: String {

@@ -46,3 +46,21 @@ private func addMeta(_ p: Paths, _ id: String, status: RecordingStatus, daysAgo:
     #expect(m.status == .reviewing)
     #expect(try store.meta(rec.id).status == .reviewing)
 }
+
+@Test func interruptedRecordingBecomesFailedAndRetryable() throws {
+    let (l, p, store, _, _) = setup()
+    let rec = try RawRecorder(paths: p, session: RawSession(mode: .screen, display: Rect(x: 0, y: 0, w: 640, h: 400), createdAt: .now), now: .now)
+    let seg = rec.beginSegment(hostTime: 0)
+    try Data(repeating: 1, count: 1000).write(to: seg)      // the app quit mid-recording: no meta.json
+    try l.onLaunch(now: .now)
+    let m = try store.meta(rec.id)
+    #expect(m.status == .processingFailed)
+    #expect(m.error == "Video Prompt quit while recording")
+}
+
+@Test func emptyOrphanFolderIsRemoved() throws {
+    let (l, p, _, _, _) = setup()
+    try FileManager.default.createDirectory(at: p.raw("20261006-000000"), withIntermediateDirectories: true)
+    try l.onLaunch(now: .now)
+    #expect(!FileManager.default.fileExists(atPath: p.recording("20261006-000000").path))
+}

@@ -3,6 +3,7 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 import VPCore
+import VPMedia
 
 enum Tools {
     static func tool(_ name: String, _ description: String, _ properties: [String: JSONValue] = [:], required: [String] = []) -> JSONValue {
@@ -18,6 +19,10 @@ enum Tools {
              ["limit": .object(["type": .string("integer"), "description": .string("How many to list (default 10)")])]),
         tool("get_recording", "Get one Video Prompt recording by id (from list_recordings).",
              ["id": .object(["type": .string("string")])], required: ["id"]),
+        tool("get_frames",
+             "Frames of a recording's video between two timestamps (seconds), to look closer at what the timeline points to. Default 2 fps, at most 10; up to 20 frames per call. id defaults to the latest recording.",
+             ["id": .object(["type": .string("string")]), "from": .object(["type": .string("number")]),
+              "to": .object(["type": .string("number")]), "fps": .object(["type": .string("number")])], required: ["from", "to"]),
         tool("wait_for_next_recording",
              "Ask the user to show you something, then call this: it waits until they record and press Send in Video Prompt, and returns that recording.",
              ["timeout_s": .object(["type": .string("number"), "description": .string("Seconds to wait (default 300)")])]),
@@ -90,6 +95,13 @@ extension MCPServer {
                 "\(m.id) · \(m.title) · \(m.createdAt.formatted(date: .abbreviated, time: .shortened)) · \(fmtLen(m.duration)) · \(m.status.rawValue)"
             }
             return Tools.text(rows.isEmpty ? "No recordings yet." : rows.joined(separator: "\n"))
+        case "get_frames":
+            let id = args["id"]?.string ?? store.latestReady()?.id
+            guard let id, Tools.isValidID(id), (try? store.meta(id))?.status == .ready, let m = try? store.manifest(id) else {
+                return Tools.text("No ready recording with that id. Call list_recordings to see what exists.", isError: true)
+            }
+            return await frames(id: id, manifest: m, from: Tools.clampedSeconds(args["from"]?.number ?? 0),
+                                to: Tools.clampedSeconds(args["to"]?.number ?? 0), fps: args["fps"]?.number ?? 2)
         case "wait_for_next_recording":
             return await waitForNext(timeout: Tools.clampedSeconds(args["timeout_s"]?.number ?? 300))
         default:
@@ -110,6 +122,31 @@ extension MCPServer {
             content.append(.object(["type": .string("image"), "data": .string(data.base64EncodedString()), "mimeType": .string("image/jpeg")]))
         }
         try? store.update(id) { $0.fetchedByCwd = cwd }
+        return .object(["content": .array(content), "isError": .bool(false)])
+    }
+
+    /// Labelled frames for a time range: at most 20 (fps lowered to fit), within the image budget
+    /// (shrunk, then thinned to an even spread keeping the first and last).
+    func frames(id: String, manifest m: Manifest, from: Double, to: Double, fps: Double) async -> JSONValue {
+        let video = store.paths.recording(id).appending(path: m.video.file)
+        let span = abs(to - from)
+        var rate = min(max(fps, 0.1), Double(VideoFPS))
+        if span * rate + 1 > 20 { rate = 19 / max(span, 0.01) }
+        guard let all = try? await extractFrames(video: video, from: from, to: to, fps: rate, maxLongEdge: 1568), !all.isEmpty else {
+            return Tools.text("Couldn't read frames from \(video.path).", isError: true)
+        }
+        let plan = Tools.attachmentPlan(sizes: all.map { ($0.width, $0.height) }, budgetTokens: imageBudgetTokens)
+        let keep = Set(plan.inline)
+        var header = String(format: "Frames of recording %@ from %.1f s to %.1f s at %.1f fps (%d of %d shown).", id,
+                            min(from, to), max(from, to), rate, keep.count, all.count)
+        if keep.count < all.count { header += " For the rest, ask for a narrower range or a lower fps." }
+        var content: [JSONValue] = [.object(["type": .string("text"), "text": .string(header)])]
+        for (i, f) in all.enumerated() where keep.contains(i) {
+            var data = f.jpeg
+            if plan.scale < 1, let small = Tools.shrinkJPEG(data, maxPixel: Int((Double(max(f.width, f.height)) * plan.scale).rounded())) { data = small }
+            content.append(.object(["type": .string("text"), "text": .string(String(format: "%.1f s", f.t))]))
+            content.append(.object(["type": .string("image"), "data": .string(data.base64EncodedString()), "mimeType": .string("image/jpeg")]))
+        }
         return .object(["content": .array(content), "isError": .bool(false)])
     }
 

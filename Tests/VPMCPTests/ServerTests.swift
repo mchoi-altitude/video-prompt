@@ -41,10 +41,10 @@ private func content(_ r: [String: Any]) -> [[String: Any]] {
     #expect((r["result"] as? [String: Any])?["protocolVersion"] as? String == "2025-06-18")
 }
 
-@Test func toolsListHasFourTools() async throws {
+@Test func toolsListHasFiveTools() async throws {
     let r = try await call(server(Paths(root: tempDir())), #"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#)
     let names = ((r["result"] as? [String: Any])?["tools"] as? [[String: Any]])?.compactMap { $0["name"] as? String }
-    #expect(Set(names ?? []) == ["get_latest_recording", "list_recordings", "get_recording", "wait_for_next_recording"])
+    #expect(Set(names ?? []) == ["get_latest_recording", "list_recordings", "get_recording", "get_frames", "wait_for_next_recording"])
 }
 
 @Test func latestReturnsTimelineAndOverview() async throws {
@@ -199,3 +199,48 @@ actor Collector {
     #expect(p.inline.first == 0 && p.inline.last == 23)  // first and last frame always attached
 }
 
+
+private func addWithVideo(_ p: Paths, id: String, seconds: Double = 4) async throws {
+    let v = tempDir().appending(path: "v.mov")
+    try await makeColorVideo(url: v, size: (320, 200), blocks: [ColorBlock(seconds / 2, (240, 240, 240)), ColorBlock(seconds / 2, (20, 20, 20))])
+    try makeProcessedRecording(p, id: id, status: .ready, video: v)
+}
+
+private func images(_ c: [[String: Any]]) -> Int { c.filter { $0["type"] as? String == "image" }.count }
+
+@Test func getFramesReturnsLabelledImages() async throws {
+    let p = Paths(root: tempDir())
+    try await addWithVideo(p, id: "r1")
+    let c = content(try await call(server(p), toolCall("get_frames", #"{"id":"r1","from":1,"to":2,"fps":2}"#)))
+    #expect(images(c) == 3)
+    let texts = c.compactMap { $0["text"] as? String }.joined(separator: "\n")
+    #expect(texts.contains("1.0 s") && texts.contains("1.5 s") && texts.contains("2.0 s"))
+}
+
+@Test func getFramesDefaultsToLatest() async throws {
+    let p = Paths(root: tempDir())
+    try await addWithVideo(p, id: "r1")
+    let c = content(try await call(server(p), toolCall("get_frames", #"{"from":0,"to":0}"#)))
+    #expect(images(c) == 1)
+}
+
+@Test func getFramesCapsAtTwenty() async throws {
+    let p = Paths(root: tempDir())
+    try await addWithVideo(p, id: "r1")
+    let c = content(try await call(server(p), toolCall("get_frames", #"{"from":0,"to":3.9,"fps":10}"#)))
+    #expect(images(c) <= 20 && images(c) >= 10)
+}
+
+@Test func getFramesRespectsBudget() async throws {
+    let p = Paths(root: tempDir())
+    try await addWithVideo(p, id: "r1")
+    let s = MCPServer(store: Store(paths: p), waiters: Waiters(paths: p), pid: 4242, cwd: "/proj", imageBudgetTokens: 0)
+    let c = content(try await call(s, toolCall("get_frames", #"{"from":0,"to":3,"fps":2}"#)))
+    #expect(images(c) == 2)   // first and last only; the rest are named so Claude can ask again
+    #expect(c.compactMap { $0["text"] as? String }.joined().contains("narrower range"))
+}
+
+@Test func getFramesUnknownIdIsError() async throws {
+    let r = try await call(server(Paths(root: tempDir())), toolCall("get_frames", #"{"id":"nope","from":0,"to":1}"#))
+    #expect((r["result"] as? [String: Any])?["isError"] as? Bool == true)
+}

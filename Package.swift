@@ -8,6 +8,7 @@ let package = Package(
         .target(name: "VPCore"),
         .target(name: "VPMedia", dependencies: ["VPCore"]),
         .target(name: "VPProcess", dependencies: ["VPCore", "VPMedia"]),
+        .executableTarget(name: "vp-process", dependencies: ["VPProcess"]),
         .target(name: "VPTestSupport", dependencies: ["VPCore", "VPMedia"], path: "Tests/Support"),
         .testTarget(name: "VPCoreTests", dependencies: ["VPCore"], resources: [.copy("Golden")]),
         .testTarget(name: "VPProcessTests", dependencies: ["VPProcess", "VPTestSupport"]),

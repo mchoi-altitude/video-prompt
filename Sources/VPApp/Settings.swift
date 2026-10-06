@@ -6,7 +6,22 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var lastMode: CaptureMode = .window
     public var drawingsFade = true
     public var reviewStep = true
+    /// The first-run setup window has been shown once.
+    public var setupShown = false
     public init() {}
+
+    private enum K: String, CodingKey { case retention, lastMode, drawingsFade, reviewStep, setupShown }
+
+    /// Missing keys keep their defaults, so adding a setting never resets the others.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: K.self)
+        let d = AppSettings()
+        retention = (try? c.decodeIfPresent(RetentionPolicy.self, forKey: .retention)) ?? d.retention
+        lastMode = (try? c.decodeIfPresent(CaptureMode.self, forKey: .lastMode)) ?? d.lastMode
+        drawingsFade = (try? c.decodeIfPresent(Bool.self, forKey: .drawingsFade)) ?? d.drawingsFade
+        reviewStep = (try? c.decodeIfPresent(Bool.self, forKey: .reviewStep)) ?? d.reviewStep
+        setupShown = (try? c.decodeIfPresent(Bool.self, forKey: .setupShown)) ?? d.setupShown
+    }
 }
 
 /// Settings as one JSON blob in UserDefaults; anything unreadable falls back to defaults.

@@ -108,3 +108,15 @@ private func frameCount(_ url: URL) async throws -> Int {
     let n = try await frameCount(out)
     #expect(n >= 29 && n <= 31)
 }
+
+@Test func renderScalesWholeWindowDown() async throws {
+    let src = try await quadrants()
+    let out = tempDir().appending(path: "w.mp4")
+    // The full 640×400 window into a 320×200 canvas: scaled, not cropped.
+    let r = try await renderWindowVideo(asset: AVURLAsset(url: src), display: display, canvas: (320, 200),
+                                        crop: { _ in Rect(x: 0, y: 0, w: 640, h: 400) }, clicks: [], outputScale: 0.5, to: out)
+    #expect(r.width == 320 && r.height == 200)
+    #expect(isClose(try await pixel(out, at: 0.5, x: 40, y: 40), red))          // top-left quadrant
+    let br = try await pixel(out, at: 0.5, x: 300, y: 190)                       // bottom-right quadrant is still there
+    #expect(br.r > 150 && br.g > 150 && br.b < 120)
+}

@@ -3,6 +3,10 @@ import Foundation
 /// Frames per second for capture and the recording video (spec §2 #19). The one place to change it.
 public let VideoFPS = 10
 
+/// The recording video is scaled (never cropped) to at most this many pixels tall: 1080p keeps UI
+/// text readable while a Retina capture would be ~4× the size for detail Claude never sees.
+public let VideoMaxHeight = 1080
+
 public struct Rect: Codable, Sendable, Equatable {
     public var x, y, w, h: Double
     public init(x: Double, y: Double, w: Double, h: Double) { self.x = x; self.y = y; self.w = w; self.h = h }

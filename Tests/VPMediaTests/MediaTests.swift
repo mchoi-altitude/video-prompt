@@ -51,3 +51,27 @@ import VPTestSupport
     #expect(String(decoding: data.prefix(4), as: UTF8.self) == "RIFF")
     #expect(data.count > 16000)  // > 0.5 s of 16-bit mono at 16 kHz
 }
+
+private let ffmpeg = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"].first { FileManager.default.isExecutableFile(atPath: $0) }
+
+/// Retina-size, busy 30 fps video with a long keyframe interval, like a real screen recording.
+@Test(.enabled(if: ffmpeg != nil, "needs ffmpeg to build a realistic fixture"))
+func sceneDetectionIsFastOnLongRecordings() async throws {
+    let u = tempDir().appending(path: "long.mov")
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: ffmpeg!)
+    p.arguments = ["-v", "error", "-f", "lavfi", "-i", "testsrc2=size=2880x1800:rate=30:duration=30",
+                   "-c:v", "libx264", "-preset", "ultrafast", "-g", "300", "-pix_fmt", "yuv420p", u.path]
+    try p.run(); p.waitUntilExit()
+    let start = ContinuousClock.now
+    _ = try await sceneChanges(in: AVURLAsset(url: u))
+    let elapsed = ContinuousClock.now - start
+    #expect(elapsed < .seconds(3), "30 s retina recording took \(elapsed)")
+}
+
+@Test func sceneChangeFoundInLongRecording() async throws {
+    let u = tempDir().appending(path: "long.mov")
+    try await makeColorVideo(url: u, size: (640, 400), blocks: [ColorBlock(15, (240, 240, 240)), ColorBlock(15, (20, 20, 20))])
+    let scenes = try await sceneChanges(in: AVURLAsset(url: u))
+    #expect(scenes.count == 1 && abs(scenes[0] - 15) <= 0.3)
+}

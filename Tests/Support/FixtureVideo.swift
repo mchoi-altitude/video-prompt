@@ -61,9 +61,13 @@ private func writeVideo(url: URL, size: (Int, Int), blocks: [ColorBlock]) async 
             CVPixelBufferLockBaseAddress(buf, [])
             let base = CVPixelBufferGetBaseAddress(buf)!.assumingMemoryBound(to: UInt8.self)
             let stride = CVPixelBufferGetBytesPerRow(buf)
-            for y in 0..<h {
-                let row = base + y * stride
-                for x in 0..<w { row[x * 4] = b.rgb.2; row[x * 4 + 1] = b.rgb.1; row[x * 4 + 2] = b.rgb.0; row[x * 4 + 3] = 255 }
+            if b.rgb.0 == b.rgb.1 && b.rgb.1 == b.rgb.2 {
+                memset(base, Int32(b.rgb.0), stride * h)  // gray: every byte the same (alpha unused by H.264)
+            } else {
+                for y in 0..<h {
+                    let row = base + y * stride
+                    for x in 0..<w { row[x * 4] = b.rgb.2; row[x * 4 + 1] = b.rgb.1; row[x * 4 + 2] = b.rgb.0; row[x * 4 + 3] = 255 }
+                }
             }
             CVPixelBufferUnlockBaseAddress(buf, [])
             adaptor.append(buf, withPresentationTime: CMTime(value: CMTimeValue(frame), timescale: CMTimeScale(fps)))

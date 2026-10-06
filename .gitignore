@@ -6,3 +6,5 @@ __pycache__/
 xcuserdata/
 DerivedData/
 build/
+.build/
+.superpowers/

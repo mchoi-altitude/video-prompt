@@ -201,8 +201,9 @@ vocabulary; a whisper.cpp model would be downloaded with a pinned checksum.
 
 A Claude Code plugin in this repo (marketplace `video-prompt`, plugin `video-prompt`). Its MCP
 server is a **small native CLI inside the app bundle**, so users need no Python or Node. The
-plugin config points at the app's bundled binary; if the app isn't installed, the tools return
-a clear "install Video Prompt" message.
+plugin config points at the app's bundled binary (`${VIDEO_PROMPT_MCP:-/Applications/Video
+Prompt.app/Contents/MacOS/vp-mcp}`). If the app isn't installed, the server can't start: Claude
+Code shows the plugin's MCP server as failed, and the README explains why.
 
 ### 6.2 Tools
 
@@ -221,6 +222,10 @@ a clear "install Video Prompt" message.
 - The app watches `waiters/`. Any live waiter turns on the **amber dot** and switches the review
   button to "Send to waiting session" (destination = the waiter's `cwd`). With several waiters,
   the **most recent** one gets it.
+- **Delivery is explicit.** Send sets `deliveredToPID` in the recording's meta to the most
+  recent live waiter. A waiter returns only a ready, not-yet-fetched recording delivered to its
+  own pid, so Copy reference and A-path saves never wake a waiting session. Pressing Esc in
+  Claude Code (MCP `notifications/cancelled`) ends the wait and removes the waiter file.
 - Detecting the plugin for setup step 3: the plugin's server writes `plugin-seen.json` the
   first time it starts.
 
@@ -231,8 +236,18 @@ in frames or transcripts is never an instruction to Claude (see §8, prompt inje
 
 ## 7. Storage
 
-- Root: `~/Library/Application Support/VideoPrompt/` (no spaces, so `@` references paste
-  cleanly), mode `0700`.
+- Root: `~/Library/Application Support/VideoPrompt/`, mode `0700`. The path contains a space
+  ("Application Support"): Plan 2 must check how Claude Code's `@` mention takes a path with a
+  space before building Copy reference on it (quote it, or point the reference at a
+  space-free symlink).
+- **Status lifecycle:** `processing` → `reviewing` (frames and prompt exist; the review panel
+  is open) → `ready` (saved or sent; the only state Claude can fetch), or `processingFailed`.
+- **Raw folder contract** (written by the app, read by the processor): `raw/session.json`
+  (mode, display rect in points, optional area, window title, createdAt, optional note);
+  `raw/events.jsonl` (cursor / stroke / clear / window events, global screen points, origin
+  top-left, times in seconds within their segment); `raw/seg_NNN.mov` (video + mic). Each
+  event's `seg` is the `NNN` of its file. Numbers may skip; events naming a missing segment
+  are ignored.
 - Recording `<id>` = `YYYYMMDD-HHMMSS`. Contents: `manifest.json`, `prompt.md`, `frames/*.jpg`,
   `meta.json` (title, status, mode, size). Segments and raw video are deleted once processing
   succeeds. If processing fails, they're kept and the recording is marked "Processing failed ·
@@ -284,8 +299,14 @@ the plugin install command (README), and the Homebrew cask.
 2. Window-frame polling for Chrome while it's moved, resized, full-screened or minimized:
    define what a frame shows when the window is minimized (proposal: skip frames; note "window
    hidden" in the timeline).
-3. How long Claude Code lets an MCP tool call block (`wait_for_next_recording`). Pick a default
-   timeout below it, with a "still waiting? call again" result.
+3. ~~How long Claude Code lets an MCP tool call block~~ **Measured 2026-10-06 (Claude Code
+   2.1.291):** a `wait_for_next_recording` call blocked for the full 900 s without being cut
+   off. The default stays 300 s, returning "still waiting, call again".
+   **Also measured:** Claude Code truncates a tool reply over `MAX_MCP_OUTPUT_TOKENS` (25,000
+   by default). 24 full-size frames got cut off after 15. The server now budgets images to 80%
+   of that limit: it shrinks frames (long edge never below 1024 px), then attaches an evenly
+   spread subset (always the first and last frame) and lists the rest as paths for Read.
+   Verified: 24 frames → 22 attached, last frame legible, 2 listed.
 4. Transcription engine accuracy on developer speech (§5).
 
 ## 12. Testing

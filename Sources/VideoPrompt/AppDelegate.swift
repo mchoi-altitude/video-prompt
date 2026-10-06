@@ -1,5 +1,8 @@
 import AppKit
 import Combine
+import os
+
+let log = Logger(subsystem: "ai.altitudeiq.videoprompt", category: "app")
 import VPApp
 import VPCapture
 import VPCore
@@ -46,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastCursor: Point?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        log.notice("launched, data root \(self.paths.root.path, privacy: .public)")
         try? lifecycle.onLaunch(now: .now)
         statusItem = StatusItem(items: { [unowned self] in
             menuItems(waiting: watcher.current, chrome: frontmostChromeWindow(windows.windows()),
@@ -90,6 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: Starting
 
     private func handle(_ action: MenuAction) {
+        log.notice("menu action \(String(describing: action), privacy: .public)")
         switch action {
         case .recordChrome: startChrome()
         case .recordScreen: startScreen()
@@ -109,6 +114,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startLastMode() {
+        let chrome = frontmostChromeWindow(windows.windows())
+        log.notice("startLastMode state=\(String(describing: self.controller.state), privacy: .public) mode=\(String(describing: self.settings.settings.lastMode), privacy: .public) chrome=\(chrome?.title ?? "nil", privacy: .public) windows=\(self.windows.windows().filter { $0.layer == 0 && $0.onScreen }.map(\.owner).prefix(8).joined(separator: ","), privacy: .public)")
+        let chromes = windows.windows().filter { $0.owner == "Google Chrome" }
+            .map { "\($0.layer)/\($0.onScreen ? "on" : "off")/\(Int($0.frame.w))x\(Int($0.frame.h))" }
+        log.notice("chrome windows seen: \(chromes.joined(separator: " "), privacy: .public)")
         guard controller.state == .idle || isDone else { return }
         switch settings.settings.lastMode {
         case .window: frontmostChromeWindow(windows.windows()) != nil ? startChrome() : startScreen()
@@ -150,6 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func begin(mode: CaptureMode, target: CaptureTarget, screen: NSScreen) {
+        log.notice("begin mode=\(String(describing: mode), privacy: .public) state=\(String(describing: self.controller.state), privacy: .public)")
         guard controller.state == .idle || isDone else { return }
         if isDone { controller.reset() }
         targetScreen = screen
@@ -173,6 +184,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func stop() { Task { await controller.stop() } }
 
     private func stateChanged(_ s: RecState) {
+        log.notice("state \(String(describing: s), privacy: .public)")
         refreshBadge()
         switch s {
         case let .countdown(n):

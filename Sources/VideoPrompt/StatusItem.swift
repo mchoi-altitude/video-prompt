@@ -4,7 +4,16 @@ import VPApp
 /// The menu-bar icon and its menu, rebuilt from `menuItems(...)` each time it opens.
 @MainActor
 final class StatusItem: NSObject, NSMenuDelegate {
-    private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    private let item: NSStatusItem = {
+        // New icons go to the left end of the right side of the menu bar; on a full menu bar
+        // that's under the camera notch. Ask for the far right (next to Control Center)
+        // unless the user has dragged it somewhere themselves.
+        let key = "NSStatusItem Preferred Position VideoPrompt"
+        if UserDefaults.standard.object(forKey: key) == nil { UserDefaults.standard.set(0.0, forKey: key) }
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        item.autosaveName = "VideoPrompt"
+        return item
+    }()
     private let menu = NSMenu()
     private let items: () -> [MenuItemModel]
     private let onAction: (MenuAction) -> Void
@@ -16,6 +25,10 @@ final class StatusItem: NSObject, NSMenuDelegate {
         menu.delegate = self
         item.menu = menu
         setBadge(.none)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [item] in
+            let f = item.button?.window?.frame ?? .zero
+            log.notice("status item visible=\(item.isVisible, privacy: .public) frame=\(NSStringFromRect(f), privacy: .public)")
+        }
     }
 
     func setBadge(_ badge: MenuBadge) {

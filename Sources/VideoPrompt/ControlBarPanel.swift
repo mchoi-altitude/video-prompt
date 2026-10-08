@@ -54,13 +54,13 @@ struct ControlBarView: View {
                 bar("pencil.tip", "Draw (⌥D)", on: controller.drawOn) { controller.drawOn.toggle() }
                     .disabled(paused)
                 if controller.drawOn {
-                    Picker("Tool", selection: $tool) {
-                        Image(systemName: "scribble").tag(StrokeTool.pen)
-                        Image(systemName: "arrow.up.right").tag(StrokeTool.arrow)
-                        Image(systemName: "rectangle").tag(StrokeTool.box)
+                    // Own buttons, not a segmented Picker: the system control picked dark glyphs in Light mode.
+                    HStack(spacing: 2) {
+                        toolButton(.pen, "scribble", "Pen")
+                        toolButton(.arrow, "arrow.up.right", "Arrow")
+                        toolButton(.box, "rectangle", "Box")
                     }
-                    .pickerStyle(.segmented).labelsHidden().frame(width: 110)
-                    .onChange(of: tool) { _, t in controller.drawing.tool = t }
+                    .padding(2).background(Capsule().fill(Color.white.opacity(0.12)))
                     bar("arrow.uturn.backward", "Undo") { controller.undoDrawing(hostTime: ProcessInfo.processInfo.systemUptime) }
                     bar("trash", "Clear drawings") { controller.clearDrawings(hostTime: ProcessInfo.processInfo.systemUptime) }
                 }
@@ -88,6 +88,16 @@ struct ControlBarView: View {
     private var timeLabel: String {
         let s = Int(controller.elapsed)
         return String(format: "%d:%02d", s / 60, s % 60)
+    }
+
+    private func toolButton(_ t: StrokeTool, _ symbol: String, _ label: String) -> some View {
+        Button { tool = t; controller.drawing.tool = t } label: {
+            Image(systemName: symbol).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
+                .frame(width: 32, height: 28)
+                .background(Capsule().fill(tool == t ? Color.white.opacity(0.3) : Color.clear))
+        }
+        .buttonStyle(.plain).help(label).accessibilityLabel(label)
+        .accessibilityAddTraits(tool == t ? .isSelected : [])
     }
 
     private func bar(_ symbol: String, _ label: String, on: Bool = false, action: @escaping () -> Void) -> some View {

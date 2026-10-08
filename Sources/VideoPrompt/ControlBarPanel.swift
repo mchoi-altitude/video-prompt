@@ -16,6 +16,8 @@ final class ControlBarPanel {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
+        // The bar is always dark; in Light mode the tool picker drew black glyphs on it.
+        panel.appearance = NSAppearance(named: .darkAqua)
         panel.isMovableByWindowBackground = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = FirstMouseHostingView(rootView: ControlBarView(controller: controller, onStop: onStop))

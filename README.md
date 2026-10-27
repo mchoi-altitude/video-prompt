@@ -71,6 +71,14 @@ recordings folder directly and opens no network port. Install it from this repo:
 If the Video Prompt app isn't installed, the plugin's server can't start and Claude Code lists it
 as failed. Install the app, or set `VIDEO_PROMPT_MCP` to a built `vp-mcp`.
 
+Claude can fetch a recording only after you press Save or Send in the review panel. Until then
+the tools say it's still in review.
+
+`/video-prompt:brief` turns the latest recording into `brief.md`: a short, numbered change list
+that names each element by its on-screen text. Claude pulls one frame per piece of feedback
+instead of paging through the video. Paste the brief into a session that can't see your Mac,
+such as a cloud workspace, or into an issue.
+
 ## Repo layout
 
 - `docs/superpowers/specs/2026-10-06-video-prompt-design.md`: the v1 design. Start here.

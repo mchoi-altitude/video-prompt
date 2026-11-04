@@ -37,7 +37,7 @@ Copy-Item (Get-Command ffmpeg).Source, (Get-Command ffprobe).Source "$AppDir\ven
 
 # The Start menu icon, from the same drawing code as the tray.
 Run node scripts\write-icon.js video-prompt.raw
-Run ffmpeg -v error -y -f rawvideo -pix_fmt bgra -s 256x256 -i video-prompt.raw -frames:v 1 -update 1 "$Stage\video-prompt.ico"
+Run ffmpeg -v error -y -f rawvideo -pix_fmt bgra -s 256x256 -i video-prompt.raw '-frames:v' 1 -update 1 "$Stage\video-prompt.ico"
 Remove-Item video-prompt.raw
 
 Compress-Archive -Path $Stage -DestinationPath out\VideoPrompt-windows-beta.zip

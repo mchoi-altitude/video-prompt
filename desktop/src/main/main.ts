@@ -542,6 +542,10 @@ function setState(next: State) {
   if (next !== "recording") globalShortcut.unregister("Alt+D");
 }
 
+// One copy at a time: opening the app again just opens its menu.
+if (!app.requestSingleInstanceLock()) app.quit();
+app.on("second-instance", () => toggleTrayMenu());
+
 app.whenReady().then(() => {
   mkdirSync(paths.recordings, { recursive: true });
   if (!process.env.VIDEO_PROMPT_HOME) chmodSync(root, 0o700);

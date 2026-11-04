@@ -55,8 +55,11 @@
   // Reads the newest frame from a copy of the stream, while measuring a region's position.
   let probeTrack: MediaStreamTrack | null = null;
   let latest: any = null;
+  let frames = 0;
 
-  const startProbe = () => {
+  const startProbe = async () => {
+    // The usual 10 fps would make the flash longer than it needs to be. Processing forces 10 fps anyway.
+    await stream!.getVideoTracks()[0].applyConstraints({ frameRate: 30 }).catch(() => undefined);
     probeTrack = stream!.getVideoTracks()[0].clone();
     const reader = new (window as any).MediaStreamTrackProcessor({ track: probeTrack }).readable.getReader();
     void (async () => {
@@ -65,6 +68,7 @@
         if (done) return;
         latest?.close();
         latest = value;
+        frames += 1;
       }
     })();
   };
@@ -80,7 +84,8 @@
     return { width, height, first: pixel(inset, inset), last: pixel(width - 1 - inset, height - 1 - inset) };
   };
 
-  const stopProbe = () => {
+  const stopProbe = async () => {
+    await stream?.getVideoTracks()[0].applyConstraints({ frameRate: 10 }).catch(() => undefined);
     probeTrack?.stop();
     probeTrack = null;
     latest?.close();
@@ -88,5 +93,5 @@
   };
 
   // Called from the main process with a user gesture.
-  Object.assign(window, { startCapture, startSegment, stopSegment, stopCapture, startProbe, readProbe, stopProbe });
+  Object.assign(window, { startCapture, startSegment, stopSegment, stopCapture, startProbe, readProbe, stopProbe, probeFrames: () => frames });
 }

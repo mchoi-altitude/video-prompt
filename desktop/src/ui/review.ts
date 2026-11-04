@@ -15,8 +15,6 @@
     status.style.display = "none";
     form.style.display = "block";
     video.src = `file://${d.video.split("/").map(encodeURIComponent).join("/")}`;
-    // Starts muted, like the Mac's preview.
-    video.muted = true;
     transcript.value = d.transcript;
     note.value = d.note;
     if (d.transcription === "unavailable") hint.textContent = "Speech-to-text didn't run, so there's no transcript. Type what you said here if it matters.";

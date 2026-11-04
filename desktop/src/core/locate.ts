@@ -1,29 +1,34 @@
 // Finding a region chosen in the system's dialog, which doesn't say where it is. The overlay is in
-// the capture, so it paints stripes that encode screen position, one bit per frame, and the first and
-// last pixels the capture sees give the region's place. Capture alters colors, so the stripes are
-// neutral and only read as light or dark. They're Gray code, so neighboring pixels differ by one bit.
+// the capture, so it paints a code for screen position at very low opacity, one bit of x and one of
+// y per frame. It's too faint to read directly, so each frame at the region's first and last pixels
+// is compared with how those pixels looked just before: the difference gives the code.
 
 export type RGB = [number, number, number];
 
-/** One frame of stripes. `bit` of the position along `axis`, drawn with these two brightness levels. */
-export type Step = { axis: "x" | "y"; bit: number; dark: number; light: number };
+/** One frame: bit `bit` of both x and y. */
+export type Step = { bit: number };
 
-// Each frame's levels differ from the last two frames', so a frame from before it reached the
-// capture is never read as this one. Far enough apart to survive small changes in the capture.
-const LEVELS = [[0, 255], [40, 215], [80, 175]];
-const TOLERANCE = 18;
-
-const bitsFor = (size: number) => Math.ceil(Math.log2(size));
+/** The code's opacity, out of 255. Low enough that the screen stays clearly visible through it. */
+export const PATTERN_ALPHA = 9;
+const ALPHA = PATTERN_ALPHA / 255;
+/** How much each of the four code levels adds to a pixel's brightness, at this opacity. */
+const LEVEL_STEP = PATTERN_ALPHA / 3;
+/** A reading further than this from any level isn't the code: something else changed the pixel. */
+const TOLERANCE = 1.3;
 
 export function patternSteps(screenW: number, screenH: number): Step[] {
-  const bits = (axis: "x" | "y", size: number) => Array.from({ length: bitsFor(size) }, (_, i) => ({ axis, bit: bitsFor(size) - 1 - i }));
-  return [...bits("x", screenW), ...bits("y", screenH)].map((s, i) => ({ ...s, dark: LEVELS[i % 3][0], light: LEVELS[i % 3][1] }));
+  const bits = Math.ceil(Math.log2(Math.max(screenW, screenH)));
+  return Array.from({ length: bits }, (_, i) => ({ bit: bits - 1 - i }));
 }
 
-/** What a step paints at a position along its axis. Mirrored by drawPattern in ui/overlay.ts. */
-export function stepLevel(step: Step, position: number): number {
-  const gray = position ^ (position >> 1);
-  return (gray >> step.bit) & 1 ? step.light : step.dark;
+/** The code level (0 to 3) a step paints at a screen pixel. Mirrored by drawPattern in ui/overlay.ts. */
+export function stepLevel(step: Step, x: number, y: number): number {
+  return ((x >> step.bit) & 1) * 2 + ((y >> step.bit) & 1);
+}
+
+/** What a pixel of brightness `under` becomes beneath code level `level`. */
+export function blended(under: number, level: number): number {
+  return under * (1 - ALPHA) + level * LEVEL_STEP;
 }
 
 /** What the capture saw at its two test pixels. */
@@ -34,39 +39,41 @@ export const SAMPLE_INSET = 4;
 
 const brightness = (c: RGB) => (c[0] + c[1] + c[2]) / 3;
 
-/** Whether both test pixels show this step's own levels, in a neutral color. */
-export function showsStep(sample: Sample, step: Step): boolean {
-  return [sample.first, sample.last].every((c) => {
-    const v = brightness(c);
-    return Math.max(...c) - Math.min(...c) <= 2 * TOLERANCE && (Math.abs(v - step.dark) <= TOLERANCE || Math.abs(v - step.light) <= TOLERANCE);
-  });
+function levelOf(seen: RGB, before: RGB): number | null {
+  const added = brightness(seen) - brightness(before) * (1 - ALPHA);
+  const level = Math.round(added / LEVEL_STEP);
+  if (level < 0 || level > 3 || Math.abs(added - level * LEVEL_STEP) > TOLERANCE) return null;
+  return level;
 }
 
-function fromGray(gray: number): number {
-  let n = 0;
-  for (let g = gray; g; g >>= 1) n ^= g;
-  return n;
-}
+const unchanged = (a: RGB, b: RGB) => Math.abs(brightness(a) - brightness(b)) <= 2;
 
 /**
- * The region's top-left in screen pixels, or null unless the two test pixels are exactly as far
- * apart as the capture's size says. A wrong position is worse than none, so this is strict.
+ * The region's top-left in screen pixels, or null if the screen changed at the test pixels during
+ * the measurement, or they aren't exactly as far apart as the capture's size says. A wrong position
+ * is worse than none, so this is strict.
  */
-export function locate(steps: Step[], samples: Sample[], screenW: number, screenH: number): { x: number; y: number } | null {
-  const read = (axis: "x" | "y", pixel: "first" | "last") => {
-    let gray = 0;
-    steps.forEach((step, i) => {
-      if (step.axis === axis && brightness(samples[i][pixel]) > (step.dark + step.light) / 2) gray |= 1 << step.bit;
-    });
-    return fromGray(gray);
-  };
-  const { width, height } = samples[0];
+export function locate(steps: Step[], before: Sample, samples: Sample[], after: Sample, screenW: number, screenH: number): { x: number; y: number } | null {
+  if (!unchanged(before.first, after.first) || !unchanged(before.last, after.last)) return null;
+  const { width, height } = before;
   if (samples.some((s) => s.width !== width || s.height !== height)) return null;
-  const x = read("x", "first") - SAMPLE_INSET;
-  const y = read("y", "first") - SAMPLE_INSET;
-  const spanW = width - 1 - 2 * SAMPLE_INSET;
-  const spanH = height - 1 - 2 * SAMPLE_INSET;
-  if (Math.abs(read("x", "last") - SAMPLE_INSET - spanW - x) > 1 || Math.abs(read("y", "last") - SAMPLE_INSET - spanH - y) > 1) return null;
+  const read = (pixel: "first" | "last") => {
+    let x = 0;
+    let y = 0;
+    for (let i = 0; i < steps.length; i++) {
+      const level = levelOf(samples[i][pixel], before[pixel]);
+      if (level === null) return null;
+      x |= (level >> 1) << steps[i].bit;
+      y |= (level & 1) << steps[i].bit;
+    }
+    return { x, y };
+  };
+  const a = read("first");
+  const b = read("last");
+  if (!a || !b) return null;
+  const x = a.x - SAMPLE_INSET;
+  const y = a.y - SAMPLE_INSET;
+  if (Math.abs(b.x - a.x - (width - 1 - 2 * SAMPLE_INSET)) > 1 || Math.abs(b.y - a.y - (height - 1 - 2 * SAMPLE_INSET)) > 1) return null;
   if (x < 0 || y < 0 || x + width > screenW || y + height > screenH) return null;
   return { x, y };
 }

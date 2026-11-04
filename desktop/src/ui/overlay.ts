@@ -16,7 +16,6 @@
   let tool: Tool = "pen";
   let fades = true;
   let origin = { x: 0, y: 0 };
-  let region: { x: number; y: number; w: number; h: number } | null = null;
 
   const opacity = (s: Stroke, now: number) => {
     if (!fades || s.endedAt === undefined) return 1;
@@ -40,12 +39,6 @@
     strokes = strokes.filter((s) => opacity(s, now) > 0);
     ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
     ctx.clearRect(0, 0, innerWidth, innerHeight);
-    if (region) {
-      // Just outside the region, so it marks the edge on screen without being in the video.
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = `rgb(${RED})`;
-      ctx.strokeRect(region.x - origin.x - 2, region.y - origin.y - 2, region.w + 4, region.h + 4);
-    }
     ctx.lineWidth = 4;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
@@ -68,24 +61,21 @@
     if (animating) requestAnimationFrame(animate);
   };
 
-  type Pattern = { axis: "x" | "y"; bit: number; dark: number; light: number };
+  type Pattern = { bit: number };
   let pattern: Pattern | null = null;
 
   // Pixels are written directly so levels land exactly as painted. Mirrors stepLevel in core/locate.ts.
-  const drawPattern = ({ axis, bit, dark, light }: Pattern) => {
+  const drawPattern = ({ bit }: Pattern) => {
     const W = canvas.width;
     const H = canvas.height;
     const image = ctx.createImageData(W, H);
     const px = new Uint32Array(image.data.buffer);
-    const color = (position: number) => {
-      const level = ((position ^ (position >> 1)) >> bit) & 1 ? light : dark;
-      return 0xff000000 | (level * 0x010101);
-    };
-    if (axis === "x") {
-      const row = Uint32Array.from({ length: W }, (_, x) => color(x));
-      for (let y = 0; y < H; y++) px.set(row, y * W);
-    } else {
-      for (let y = 0; y < H; y++) px.fill(color(y), y * W, (y + 1) * W);
+    for (let y = 0, i = 0; y < H; y++) {
+      const yBit = (y >> bit) & 1;
+      for (let x = 0; x < W; x++, i++) {
+        const level = ((x >> bit) & 1) * 2 + yBit;
+        px[i] = (9 << 24) | ((level * 85) * 0x010101);
+      }
     }
     ctx.putImageData(image, 0, 0);
   };
@@ -105,8 +95,12 @@
     fades = o.fades;
   });
   vp.onRegion((r) => {
-    region = r;
-    redraw();
+    const outline = document.getElementById("outline") as HTMLDivElement;
+    outline.style.left = `${r.x - origin.x - 3}px`;
+    outline.style.top = `${r.y - origin.y - 3}px`;
+    outline.style.width = `${r.w + 6}px`;
+    outline.style.height = `${r.h + 6}px`;
+    outline.style.opacity = "1";
   });
   vp.onDrawChanged((on) => {
     drawing = on;
@@ -124,12 +118,18 @@
   });
   vp.onCountdown(() => {
     let n = 3;
+    // A new element each time, so its fade starts over.
+    const show = () => {
+      const number = document.createElement("span");
+      number.textContent = String(n);
+      count.replaceChildren(number);
+    };
     count.style.display = "flex";
-    count.textContent = String(n);
+    show();
     const tick = setInterval(() => {
       n -= 1;
       if (n > 0) {
-        count.textContent = String(n);
+        show();
         return;
       }
       clearInterval(tick);
@@ -139,10 +139,15 @@
     }, 1000);
   });
 
+  const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+
   const paintPattern = async (step: Pattern) => {
     pattern = step;
-    drawPattern(step);
-    await new Promise((resolve) => requestAnimationFrame(resolve));
+    // Twice, so the capture delivers a frame even if the first was already on its way.
+    for (let i = 0; i < 2; i++) {
+      drawPattern(step);
+      await nextFrame();
+    }
   };
   const clearPattern = () => {
     pattern = null;

@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Manifest, Point, RawEvent, RawSession, Rect, RecordingMeta, StrokeTool } from "../core/models";
 import { appBitmap, trayBitmap } from "./icon";
-import { locate, patternSteps, SAMPLE_INSET, showsStep, type Sample } from "../core/locate";
+import { locate, patternSteps, SAMPLE_INSET, type Sample } from "../core/locate";
 import { finalize, makePaths, processRecording, readJSON, writeJSON } from "../process/processor";
 
 const root = process.env.VIDEO_PROMPT_HOME ?? join(homedir(), ".local/share/VideoPrompt");
@@ -179,6 +179,7 @@ function resizeBar(width: number) {
   bar.setBounds({ x: Math.round(b.x + (b.width - width) / 2), y: b.y, width, height: b.height });
 }
 
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Where on screen a region from the dialog is, by reading stripes the overlay paints. See core/locate.ts. */
@@ -187,35 +188,40 @@ async function locateRegion(display: Display, got: { width: number; height: numb
   const screenW = Math.round(display.size.width * scale);
   const screenH = Math.round(display.size.height * scale);
   const inRecorder = (code: string) => recorder!.webContents.executeJavaScript(code, true);
+  const inOverlay = (code: string) => overlay!.webContents.executeJavaScript(code, true);
+  const read = (): Promise<Sample> => inRecorder(`readProbe(${SAMPLE_INSET})`);
   const began = Date.now();
   const steps = patternSteps(screenW, screenH);
-  const samples: Sample[] = [];
   try {
     await inRecorder("startProbe()");
-    for (const step of steps) {
-      await overlay!.webContents.executeJavaScript(`paintPattern(${JSON.stringify(step)})`, true);
-      // The frame takes a variable time to reach the capture, so wait until a frame shows it.
-      const deadline = Date.now() + 2000;
-      for (;;) {
-        await sleep(20);
-        const sample: Sample | null = await inRecorder(`readProbe(${SAMPLE_INSET})`).catch(() => null);
-        if (sample && showsStep(sample, step)) {
-          samples.push(sample);
-          break;
-        }
-        if (Date.now() > deadline) throw new Error(`${step.axis} bit ${step.bit} never reached the capture: ${JSON.stringify(sample)}`);
+    await sleep(150);
+    // More tries cover something on screen changing at the test pixels, while there's still time
+    // to finish about when the countdown does.
+    for (let attempt = 1; attempt === 1 || (attempt <= 3 && Date.now() - began < 1500); attempt++) {
+      const before = await read();
+      const samples: Sample[] = [];
+      for (const step of steps) {
+        const start: number = await inRecorder("probeFrames()");
+        await inOverlay(`paintPattern(${JSON.stringify(step)})`);
+        // Wait for frames from after the paint. Real captures showed the first two can still be old.
+        const deadline = Date.now() + 250;
+        while (Date.now() < deadline && (await inRecorder("probeFrames()")) < start + 3) await sleep(10);
+        samples.push(await read());
       }
+      await inOverlay("clearPattern()");
+      await sleep(120);
+      const after = await read();
+      const at = locate(steps, before, samples, after, screenW, screenH);
+      console.error("region measured", JSON.stringify({ at, got, attempt, ms: Date.now() - began, before: before.first, first: samples.map((s) => s.first[0]) }));
+      if (at) return { x: display.bounds.x + at.x / scale, y: display.bounds.y + at.y / scale, w: got.width / scale, h: got.height / scale };
     }
-    const at = locate(steps, samples, screenW, screenH);
-    console.error("region measured", JSON.stringify({ at, got, ms: Date.now() - began, first: samples.map((s) => s.first[0]), last: samples.map((s) => s.last[0]) }));
-    if (!at) return null;
-    return { x: display.bounds.x + at.x / scale, y: display.bounds.y + at.y / scale, w: got.width / scale, h: got.height / scale };
+    return null;
   } catch (e) {
     console.error("couldn't measure the region", e);
     return null;
   } finally {
     await inRecorder("stopProbe()").catch(() => undefined);
-    await overlay!.webContents.executeJavaScript("clearPattern()", true);
+    await inOverlay("clearPattern()");
   }
 }
 
@@ -231,6 +237,11 @@ async function beginRecording(display: Display, region: { width: number; height:
   overlay.setBounds(display.bounds);
   currentOrigin = { x: display.bounds.x, y: display.bounds.y };
   overlay.webContents.send("init", { origin: { x: display.bounds.x, y: display.bounds.y }, fades: settings.drawingsFade });
+  // The only thing to notice is the countdown: a region is measured behind it, and recording starts
+  // when both have finished.
+  setState("countdown");
+  const counted = new Promise<void>((resolve) => ipcMain.once("countdown-done", () => resolve()));
+  overlay.webContents.send("countdown");
   const located = region ? await locateRegion(display, region) : null;
   if (located) overlay.webContents.send("region", located);
 
@@ -256,11 +267,9 @@ async function beginRecording(display: Display, region: { width: number; height:
   bar.loadFile(ui("bar"));
   bar.once("ready-to-show", () => bar?.showInactive());
 
-  setState("countdown");
-  overlay.webContents.send("countdown");
+  await counted;
+  await startSegment();
 }
-
-ipcMain.on("countdown-done", () => void startSegment());
 
 // ---- Segments
 

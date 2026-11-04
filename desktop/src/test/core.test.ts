@@ -8,7 +8,7 @@ import type { Manifest, Manifest as M, RecordingMeta } from "../core/models";
 import { buildTimeline, describeStroke, renderTimeline, segmentOffsets, sentences, stamp, titleFor, toFramePixels } from "../core/timeline";
 import { finalize, makePaths, processRecording, readJSON } from "../process/processor";
 import { parseWhisper } from "../process/tools";
-import { locate, patternSteps, SAMPLE_INSET, showsStep, stepLevel, type RGB } from "../core/locate";
+import { blended, locate, patternSteps, SAMPLE_INSET, stepLevel, type RGB, type Step } from "../core/locate";
 
 const repo = join(__dirname, "../../..");
 const circle: number[][] = [[47, 554], [90, 514], [180, 514], [223, 554], [180, 594], [90, 594], [47, 560], [50, 555], [47, 554]];
@@ -110,33 +110,34 @@ test("a region from the system dialog is kept whole, and its marks don't claim c
   assert.match(readFileSync(join(paths.recordings, id, "timeline.md"), "utf8"), /drew a mark \(its position isn't known/);
 });
 
-test("a region is located from the overlay's stripes, and bad readings are rejected", () => {
+test("a region is located from the faint code, and changes on screen are rejected", () => {
   const W = 1920, H = 1200;
   const steps = patternSteps(W, H);
-  assert.equal(steps.length, 22);
-  // Capture's changes to brightness and tint, within what the frames must survive.
-  const captured = (v: number, n: number): RGB => [v + (n % 7) - 3, v - (n % 5) + 2, v + (n % 3) - 1];
-  const samplesFor = (rx: number, ry: number, rw: number, rh: number) => steps.map((step, i) => {
-    const at = (x: number, y: number) => captured(stepLevel(step, step.axis === "x" ? x : y), i);
-    return { width: rw, height: rh, first: at(rx + SAMPLE_INSET, ry + SAMPLE_INSET), last: at(rx + rw - 1 - SAMPLE_INSET, ry + rh - 1 - SAMPLE_INSET) };
-  });
-  const regions = [[0, 0, 488, 318], [701, 433, 488, 318], [1432, 882, 488, 318], [63, 64, 200, 100], [240, 489, 642, 524], [1278, 676, 642, 524], [337, 650, 650, 392]];
-  for (const [rx, ry, rw, rh] of regions) {
-    const samples = samplesFor(rx, ry, rw, rh);
-    samples.forEach((sample, i) => assert.ok(showsStep(sample, steps[i]), `step ${i} unread at ${rx},${ry}`));
-    assert.deepEqual(locate(steps, samples, W, H), { x: rx, y: ry });
+  assert.equal(steps.length, 11);
+  const gray = (v: number): RGB => [v, v, v];
+  const samplesFor = (rx: number, ry: number, rw: number, rh: number, under: [number, number]) => {
+    const before = { width: rw, height: rh, first: gray(under[0]), last: gray(under[1]) };
+    const seen = (step: Step, x: number, y: number, s: number) => gray(Math.round(blended(s, stepLevel(step, x, y))));
+    const samples = steps.map((step) => ({
+      width: rw, height: rh,
+      first: seen(step, rx + SAMPLE_INSET, ry + SAMPLE_INSET, under[0]),
+      last: seen(step, rx + rw - 1 - SAMPLE_INSET, ry + rh - 1 - SAMPLE_INSET, under[1]),
+    }));
+    return { before, samples };
+  };
+  const regions = [[0, 0, 488, 318], [701, 433, 488, 318], [1432, 882, 488, 318], [63, 64, 200, 100], [240, 489, 642, 524], [1278, 676, 642, 524], [857, 367, 522, 330], [0, 0, 1919, 1199]];
+  // Whatever's on screen under the test pixels: black, white, dark and light UI.
+  for (const under of [[0, 255], [255, 0], [34, 240], [128, 128]] as [number, number][]) {
+    for (const [rx, ry, rw, rh] of regions) {
+      const { before, samples } = samplesFor(rx, ry, rw, rh, under);
+      assert.deepEqual(locate(steps, before, samples, before, W, H), { x: rx, y: ry }, `region ${rx},${ry} over ${under}`);
+    }
   }
-  // Each frame is told apart from the one before, so a late frame is never read as the next.
-  const samples = samplesFor(701, 433, 488, 318);
-  for (let i = 1; i < steps.length; i++) assert.equal(showsStep(samples[i - 1], steps[i]), false, `step ${i} accepted a stale frame`);
-  // Real screen content from a failed reading isn't a frame of stripes.
-  const screen = { width: 472, height: 398, first: [34, 39, 37] as RGB, last: [34, 39, 37] as RGB };
-  assert.equal(showsStep(screen, steps[0]), false);
-  // One wrong bit is caught, because the two test pixels no longer match the capture's size.
-  const wrong = samplesFor(701, 433, 488, 318);
-  const yStep = steps.findIndex((s) => s.axis === "y" && s.bit === 6);
-  wrong[yStep] = { ...wrong[yStep], first: wrong[yStep].last, last: wrong[yStep].first };
-  assert.equal(locate(steps, wrong, W, H), null);
+  // Something on screen changing during the measurement is caught, by either check.
+  const { before, samples } = samplesFor(701, 433, 488, 318, [34, 240]);
+  assert.equal(locate(steps, before, samples, { ...before, first: gray(120) }, W, H), null, "the screen changed");
+  const changed = samples.map((s, i) => (i === 3 ? { ...s, first: gray(200) } : s));
+  assert.equal(locate(steps, before, changed, before, W, H), null, "one frame was off");
 });
 
 test("marks in a located region get real video coordinates", async () => {

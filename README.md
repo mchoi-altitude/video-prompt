@@ -39,7 +39,7 @@ Tested on Fedora 44 with KDE Plasma 6.8 on Wayland, one monitor at 100% scale. Y
 later to update, run:
 
 ```bash
-cd "$(mktemp -d)" && gh release download beta -R mchoi-altitude/video-prompt -p VideoPrompt-linux-beta.tar.gz \
+cd "$(mktemp -d)" && gh release download linux-beta -R mchoi-altitude/video-prompt -p VideoPrompt-linux-beta.tar.gz \
   && tar -xzf VideoPrompt-linux-beta.tar.gz && ./video-prompt-linux-beta/install.sh
 ```
 
@@ -71,8 +71,9 @@ To uninstall, run `./video-prompt-linux-beta/install.sh --uninstall` from an unp
 `~/.local/share/VideoPrompt`, which holds your recordings and the speech model. Delete that too to
 remove everything.
 
-To run from source instead, or to build the archive with `npm run package`, see `desktop/`. Source
-builds need Node.js LTS, ffmpeg, cmake and g++, and `npm run package` also builds whisper-cli.
+To run from source, use `npm ci` and `npm start` in `desktop/`, with Node.js LTS and ffmpeg installed.
+Publishing (maintainers): `desktop/scripts/release.sh` builds the archive, which also needs cmake and
+g++, and replaces the `linux-beta` release. `npm run package` builds it without publishing.
 
 ### Windows
 

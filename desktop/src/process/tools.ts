@@ -4,8 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Word } from "../core/models";
 
-export const ffmpeg = process.env.VIDEO_PROMPT_FFMPEG ?? "ffmpeg";
-export const ffprobe = process.env.VIDEO_PROMPT_FFPROBE ?? "ffprobe";
+/** On Windows the package bundles ffmpeg, since there's no system package to install. */
+function tool(name: string, override: string | undefined): string {
+  if (override) return override;
+  const bundled = join(__dirname, "../../vendor/bin", `${name}.exe`);
+  return process.platform === "win32" && existsSync(bundled) ? bundled : name;
+}
+
+export const ffmpeg = tool("ffmpeg", process.env.VIDEO_PROMPT_FFMPEG);
+export const ffprobe = tool("ffprobe", process.env.VIDEO_PROMPT_FFPROBE);
 
 /** Runs a tool to completion; rejects with the end of its stderr on failure. */
 export function run(cmd: string, args: string[]): Promise<string> {

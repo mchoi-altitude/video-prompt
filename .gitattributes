@@ -1,0 +1,7 @@
+# Keep these byte-for-byte on Windows checkouts: Git Bash and WSL can't run a shell script with CRLF,
+# and tests compare against the golden file.
+desktop/bin/vp-frames text eol=lf
+desktop/scripts/*.sh text eol=lf
+Tests/VPCoreTests/Golden/* text eol=lf
+desktop/bin/vp-frames.cmd text eol=crlf
+desktop/scripts/install.cmd text eol=crlf

@@ -24,3 +24,38 @@ jobs:
       - run: choco install ffmpeg --no-progress -y
       - run: npm ci
       - run: npm test
+
+  package:
+    needs: test
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - run: choco install ffmpeg --no-progress -y
+      - run: npm ci
+      - run: scripts/build-package-win.ps1
+      - name: Install from the package and check it
+        run: |
+          Expand-Archive out\VideoPrompt-windows-beta.zip "$env:RUNNER_TEMP\unpacked"
+          $app = "$env:LOCALAPPDATA\Programs\VideoPrompt"
+          & "$env:RUNNER_TEMP\unpacked\video-prompt-windows-beta\install.cmd" -NoLaunch
+          if ($LASTEXITCODE -ne 0) { throw "install failed" }
+          $env:ELECTRON_RUN_AS_NODE = "1"
+          & "$app\electron.exe" scripts\smoke-test.js "$app\resources\app" "$env:LOCALAPPDATA\VideoPrompt\models" vendor\whisper.cpp\samples\jfk.wav
+          if ($LASTEXITCODE -ne 0) { throw "smoke test failed" }
+          Remove-Item Env:ELECTRON_RUN_AS_NODE
+          $p = Start-Process "$app\electron.exe" -PassThru
+          Start-Sleep -Seconds 10
+          if ($p.HasExited) { throw "the app exited at launch with code $($p.ExitCode)" }
+          "The app stayed running for 10 seconds"
+          Stop-Process -Id $p.Id -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VideoPrompt-windows-beta
+          path: desktop/out/VideoPrompt-windows-beta.zip
+          retention-days: 14

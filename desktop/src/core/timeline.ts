@@ -1,6 +1,6 @@
 // Port of Sources/VPCore/Timeline.swift, Sentences.swift and Markdown.swift. Coordinates, stroke
 // descriptions, times, sentence splitting and rounding must match the Mac.
-import { join } from "node:path";
+import { posix, win32 } from "node:path";
 import type { Manifest, ManifestClick, ManifestStroke, Point, Rect, Sentence, StrokeTool, TimelineItem, Word } from "./models";
 
 export const round2 = (x: number) => Math.round(x * 100) / 100;
@@ -137,8 +137,13 @@ function exampleRange(m: Manifest): [string, string] {
   return [from.toFixed(1), to.toFixed(1)];
 }
 
+/** `C:\…` or `C:/…`. */
+export const isWindowsPath = (p: string) => /^[A-Za-z]:[\\/]/.test(p);
+
 /** `timeline.md`: what the user said and drew, with timestamps, plus how to look at the video. */
 export function renderTimeline(m: Manifest, recordingDir: string, vpFrames: string): string {
+  // Paths follow the folder's own style, whichever system renders them.
+  const { join } = isWindowsPath(recordingDir) ? win32 : posix;
   const video = join(recordingDir, m.video.file);
   const [from, to] = exampleRange(m);
   const lines = [

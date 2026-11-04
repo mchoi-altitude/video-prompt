@@ -77,8 +77,7 @@ g++, and replaces the `linux-beta` release. `npm run package` builds it without 
 
 ### Windows
 
-Not available yet. It's planned to share the Fedora app's code: see the
-[design](docs/superpowers/specs/2026-11-04-windows-linux-design.md).
+Not available yet. Work on it has started: see [`desktop/WINDOWS.md`](desktop/WINDOWS.md).
 
 ## Developing
 

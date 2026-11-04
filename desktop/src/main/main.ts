@@ -6,6 +6,7 @@ import { join } from "node:path";
 import type { Manifest, Point, RawEvent, RawSession, Rect, RecordingMeta, StrokeTool } from "../core/models";
 import { appBitmap, trayBitmap } from "./icon";
 import { locate, patternSteps, SAMPLE_INSET, type Sample } from "../core/locate";
+import { expiredRecordings, type Retention } from "../core/timeline";
 import { finalize, makePaths, processRecording, readJSON, writeJSON } from "../process/processor";
 
 const root = process.env.VIDEO_PROMPT_HOME ?? join(homedir(), ".local/share/VideoPrompt");
@@ -13,7 +14,6 @@ const paths = makePaths(root);
 const vpFrames = join(__dirname, "../../bin/vp-frames");
 const settingsFile = join(root, "settings.json");
 
-type Retention = { days: number } | { keepLast: number } | "never";
 type Settings = { retention: Retention; drawingsFade: boolean };
 const defaults: Settings = { retention: { days: 3 }, drawingsFade: true };
 
@@ -480,22 +480,23 @@ async function trashRecording(id: string) {
 }
 
 async function sweep() {
-  const candidates = listRecordings().filter((m) => m.status !== "processing" && m.id !== recordingId);
-  const r = settings.retention;
-  if (r === "never") return;
-  const expired = "days" in r ? candidates.filter((m) => Date.now() - Date.parse(m.createdAt) > r.days * 86400_000) : candidates.slice(r.keepLast);
+  const expired = expiredRecordings(listRecordings(), settings.retention, Date.now());
   // One that can't be trashed shouldn't block the rest.
   for (const m of expired) await trashRecording(m.id).catch((e) => console.error("couldn't trash", m.id, e));
 }
 
 function openRecordings() {
   if (recordingsWindow) return recordingsWindow.show();
-  recordingsWindow = new BrowserWindow({ width: 640, height: 480, title: "Recordings", icon: windowIcon(), autoHideMenuBar: true, webPreferences });
+  recordingsWindow = new BrowserWindow({ width: 1000, height: 520, minWidth: 900, minHeight: 360, title: "Recordings", icon: windowIcon(), autoHideMenuBar: true, webPreferences });
   recordingsWindow.loadFile(ui("recordings"));
   recordingsWindow.on("closed", () => (recordingsWindow = undefined));
 }
 
-ipcMain.handle("recordings-list", () => listRecordings());
+ipcMain.handle("recordings-list", () => listRecordings().map((m) => ({ ...m, overview: join(paths.recordings, m.id, "overview.jpg") })));
+ipcMain.on("recordings-review", (_e, id: string) => {
+  const review = openReview(id);
+  review.webContents.once("did-finish-load", () => review.webContents.send("review-ready", reviewData(id)));
+});
 ipcMain.handle("recordings-copy", (_e, id: string) => clipboard.writeText(join(paths.recordings, id, "timeline.md")));
 ipcMain.handle("recordings-delete", async (_e, id: string) => {
   await trashRecording(id);
@@ -509,7 +510,7 @@ ipcMain.handle("recordings-retry", async (_e, id: string) => {
 
 function openSettings() {
   if (settingsWindow) return settingsWindow.show();
-  settingsWindow = new BrowserWindow({ width: 420, height: 240, title: "Settings", icon: windowIcon(), autoHideMenuBar: true, webPreferences });
+  settingsWindow = new BrowserWindow({ width: 420, height: 120, title: "Settings", icon: windowIcon(), autoHideMenuBar: true, webPreferences });
   settingsWindow.loadFile(ui("settings"));
   settingsWindow.on("closed", () => (settingsWindow = undefined));
 }
@@ -518,7 +519,7 @@ ipcMain.handle("settings-get", () => settings);
 ipcMain.handle("settings-set", (_e, next: Settings) => {
   settings = next;
   writeJSON(settingsFile, settings);
-  void sweep();
+  void sweep().then(() => recordingsWindow?.webContents.send("recordings-changed"));
 });
 
 // ---- Capture source and state

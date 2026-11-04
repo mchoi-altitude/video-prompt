@@ -176,3 +176,13 @@ export function renderTimeline(m: Manifest, recordingDir: string, vpFrames: stri
   }
   return lines.join("\n") + "\n";
 }
+
+export type Retention = { days: number } | { keepLast: number } | "never";
+
+/** Which recordings a policy removes. `metas` is newest first; one still processing is never removed. */
+export function expiredRecordings<T extends { status: string; createdAt: string }>(metas: T[], policy: Retention, now: number): T[] {
+  const candidates = metas.filter((m) => m.status !== "processing");
+  if (policy === "never") return [];
+  if ("days" in policy) return candidates.filter((m) => now - Date.parse(m.createdAt) > policy.days * 86400_000);
+  return candidates.slice(policy.keepLast);
+}

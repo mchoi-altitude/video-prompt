@@ -1,5 +1,5 @@
 type Tool = "pen" | "arrow" | "box";
-type Meta = { id: string; title: string; createdAt: string; duration: number; status: string; error?: string };
+type Meta = { id: string; title: string; createdAt: string; duration: number; status: string; sizeBytes: number; overview: string; error?: string };
 type Prefs = { retention: { days: number } | { keepLast: number } | "never"; drawingsFade: boolean };
 type ReviewData = { id: string; video: string; duration: number; transcript: string; transcription: string; note: string };
 
@@ -41,6 +41,7 @@ declare const vp: {
   recordingsCopy(id: string): Promise<void>;
   recordingsDelete(id: string): Promise<void>;
   recordingsRetry(id: string): Promise<void>;
+  recordingsReview(id: string): void;
   onRecordingsChanged(fn: () => void): void;
 
   settingsGet(): Promise<Prefs>;

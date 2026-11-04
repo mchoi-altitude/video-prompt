@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { Manifest, Manifest as M, RecordingMeta } from "../core/models";
-import { buildTimeline, describeStroke, renderTimeline, segmentOffsets, sentences, stamp, titleFor, toFramePixels } from "../core/timeline";
+import { buildTimeline, expiredRecordings, type Retention, describeStroke, renderTimeline, segmentOffsets, sentences, stamp, titleFor, toFramePixels } from "../core/timeline";
 import { finalize, makePaths, processRecording, readJSON } from "../process/processor";
 import { parseWhisper } from "../process/tools";
 import { blended, locate, patternSteps, SAMPLE_INSET, stepLevel, type RGB, type Step } from "../core/locate";
@@ -83,6 +83,23 @@ test("sentences, titles, stamps and coordinates", () => {
   assert.deepEqual(toFramePixels({ x: 150, y: 100 }, { x: 100, y: 50, w: 100, h: 100 }, 200, 200), [100, 100]);
   assert.equal(toFramePixels({ x: 99, y: 100 }, { x: 100, y: 50, w: 100, h: 100 }, 200, 200), null);
   assert.deepEqual([...segmentOffsets(new Map([[3, 2], [1, 5]]))], [[1, 0], [3, 5]]);
+});
+
+test("auto-delete removes what the policy says, and never a recording still processing", () => {
+  const now = Date.parse("2026-11-04T12:00:00Z");
+  const ago = (days: number) => new Date(now - days * 86400_000).toISOString();
+  const metas = [
+    { id: "today", status: "ready", createdAt: ago(0.1) },
+    { id: "edge", status: "ready", createdAt: ago(2.9) },
+    { id: "old", status: "ready", createdAt: ago(5) },
+    { id: "old-review", status: "reviewing", createdAt: ago(5) },
+    { id: "old-busy", status: "processing", createdAt: ago(5) },
+  ];
+  const ids = (policy: Retention) => expiredRecordings(metas, policy, now).map((m) => m.id);
+  assert.deepEqual(ids({ days: 3 }), ["old", "old-review"]);
+  assert.deepEqual(ids({ days: 1 }), ["edge", "old", "old-review"]);
+  assert.deepEqual(ids({ keepLast: 2 }), ["old", "old-review"]);
+  assert.deepEqual(ids("never"), []);
 });
 
 test("whisper output drops bracketed non-speech", () => {

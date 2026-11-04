@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld("vp", {
   recordingsCopy: (id: string) => ipcRenderer.invoke("recordings-copy", id),
   recordingsDelete: (id: string) => ipcRenderer.invoke("recordings-delete", id),
   recordingsRetry: (id: string) => ipcRenderer.invoke("recordings-retry", id),
+  recordingsReview: (id: string) => ipcRenderer.send("recordings-review", id),
   onRecordingsChanged: on("recordings-changed"),
 
   settingsGet: () => ipcRenderer.invoke("settings-get"),

@@ -1,0 +1,12 @@
+node_modules/
+out/
+dist/
+recordings/
+*.mp4
+*.webm
+*.mkv
+*.mov
+*.wav
+*.jpg
+*.jpeg
+*.png

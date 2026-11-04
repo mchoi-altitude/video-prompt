@@ -38,13 +38,12 @@ Tested on Fedora 44 with KDE Plasma 6.8 on Wayland, one monitor at 100% scale. T
 yet, so this runs from source. These steps haven't been tried on a fresh machine, so please report
 anything that's missing in this repo's Issues.
 
-The Fedora app is on the `feat/fedora-desktop` branch until it's merged. You need Node.js LTS,
-ffmpeg and the build tools for whisper.cpp:
+You need Node.js LTS, ffmpeg and the build tools for whisper.cpp:
 
 ```bash
 sudo dnf install -y nodejs npm ffmpeg-free openh264 gcc-c++ cmake make git
 
-git clone --branch feat/fedora-desktop https://github.com/mchoi-altitude/video-prompt.git
+git clone https://github.com/mchoi-altitude/video-prompt.git
 cd video-prompt/desktop
 npm ci
 

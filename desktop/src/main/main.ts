@@ -2,16 +2,19 @@
 import { app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, ipcMain, Menu, nativeImage, screen, session, shell, Tray, type Display } from "electron";
 import { createWriteStream, existsSync, mkdirSync, appendFileSync, chmodSync, readdirSync, type WriteStream } from "node:fs";
 import { homedir } from "node:os";
+import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import type { Manifest, Point, RawEvent, RawSession, Rect, RecordingMeta, StrokeTool } from "../core/models";
 import { appBitmap, trayBitmap } from "./icon";
 import { locate, patternSteps, SAMPLE_INSET, type Sample } from "../core/locate";
-import { expiredRecordings, type Retention } from "../core/timeline";
+import { expiredRecordings, toWslPath, type Retention } from "../core/timeline";
 import { finalize, makePaths, processRecording, recoverInterrupted, readJSON, writeJSON } from "../process/processor";
 
-const root = process.env.VIDEO_PROMPT_HOME ?? join(homedir(), ".local/share/VideoPrompt");
+const isWindows = process.platform === "win32";
+const root = process.env.VIDEO_PROMPT_HOME ?? (isWindows ? join(process.env.LOCALAPPDATA ?? homedir(), "VideoPrompt") : join(homedir(), ".local/share/VideoPrompt"));
 const paths = makePaths(root);
-const vpFrames = join(__dirname, "../../bin/vp-frames");
+const vpFrames = join(__dirname, "../../bin", isWindows ? "vp-frames.cmd" : "vp-frames");
+const renderOptions = isWindows ? { posixVpFrames: join(__dirname, "../../bin/vp-frames") } : {};
 const settingsFile = join(root, "settings.json");
 
 type Settings = { retention: Retention; drawingsFade: boolean };
@@ -52,6 +55,9 @@ const webPreferences = {
   sandbox: true,
 };
 
+// KWin keeps this type above normal and full-screen windows. It's Linux only.
+const overlayType = isWindows ? {} : { type: "notification" as const };
+
 const rect = (b: { x: number; y: number; width: number; height: number }): Rect => ({ x: b.x, y: b.y, w: b.width, h: b.height });
 
 // ---- Tray
@@ -73,7 +79,12 @@ function refreshTray() {
   tray?.setContextMenu(
     Menu.buildFromTemplate([
       ...(state === "recording" || state === "paused" ? [{ label: "Stop recording", click: () => void stopRecording() }] : []),
-      { label: "Record…", enabled: !busy, accelerator: "Ctrl+Alt+Shift+R", click: () => void startFlow() },
+      ...(isWindows
+        ? [
+            { label: "Record whole screen", enabled: !busy, click: () => void startFlow("screen") },
+            { label: "Record selected area…", enabled: !busy, accelerator: "Ctrl+Alt+Shift+R", click: () => void startFlow("area") },
+          ]
+        : [{ label: "Record…", enabled: !busy, accelerator: "Ctrl+Alt+Shift+R", click: () => void startFlow("dialog") }]),
       { type: "separator" },
       { label: "Recordings…", click: openRecordings },
       { label: "Settings…", click: openSettings },
@@ -99,7 +110,7 @@ function toggleTrayMenu() {
   const width = 280;
   const canStop = state === "recording" || state === "paused";
   // Four rows, or five with Stop, plus the divider, padding and border.
-  const height = (canStop ? 5 : 4) * 24 + 9 + 12;
+  const height = ((canStop ? 5 : 4) + (isWindows ? 1 : 0)) * 24 + 9 + 12;
   const panelOnTop = workArea.y > bounds.y;
   trayMenu = new BrowserWindow({
     x: workArea.x + workArea.width - width - 8,
@@ -128,29 +139,72 @@ ipcMain.on("tray-menu-close", closeTrayMenu);
 ipcMain.on("tray-menu-action", (_e, action: string) => {
   closeTrayMenu();
   if (action === "stop") void stopRecording();
-  else if (action === "record") void startFlow();
+  else if (action === "record") void startFlow("dialog");
+  else if (action === "screen" || action === "area") void startFlow(action);
   else if (action === "recordings") openRecordings();
   else if (action === "settings") openSettings();
   else if (action === "quit") app.quit();
 });
 
-// ---- Starting: the system's dialog chooses what's recorded (a screen or a region), then countdown
+// ---- Starting. On Linux, the system's dialog chooses what's recorded (a screen or a region). On
+// Windows there's no dialog, so like the Mac the app offers whole screen, or an area to drag out.
 
-async function startFlow() {
+type StartMode = "dialog" | "screen" | "area";
+let captureDisplay: Display | undefined;
+let picker: BrowserWindow | undefined;
+let pickerDone: ((area: Rect | null) => void) | undefined;
+
+async function startFlow(mode: StartMode) {
   if (state !== "idle") return;
   setState("selecting");
   try {
+    const cursorDisplay = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    const area = mode === "area" ? await pickArea(cursorDisplay) : null;
+    if (mode === "area" && !area) return setState("idle");
+    captureDisplay = cursorDisplay;
     recorder ??= createRecorder();
     await recorderReady;
     // A user gesture is required for getDisplayMedia; this hidden window can't have one otherwise.
     const got: { width: number; height: number } = await recorder.webContents.executeJavaScript("startCapture()", true);
+    if (mode !== "dialog") return await beginRecording(cursorDisplay, null, area ?? rect(cursorDisplay.bounds));
     const screenChosen = screen.getAllDisplays().find((d) => Math.round(d.size.width * d.scaleFactor) === got.width && Math.round(d.size.height * d.scaleFactor) === got.height);
-    await beginRecording(screenChosen ?? screen.getDisplayNearestPoint(screen.getCursorScreenPoint()), screenChosen ? null : got);
+    await beginRecording(screenChosen ?? cursorDisplay, screenChosen ? null : got);
   } catch (e) {
     console.error("capture didn't start", e);
     setState("idle"); // Cancelling the system dialog lands here too.
   }
 }
+
+/** A drag across `display`, in global coordinates, or null if cancelled or too small to be a choice. */
+function pickArea(display: Display): Promise<Rect | null> {
+  return new Promise((resolve) => {
+    const finish = (area: Rect | null) => {
+      globalShortcut.unregister("Escape");
+      picker?.destroy();
+      picker = undefined;
+      pickerDone = undefined;
+      resolve(area);
+    };
+    pickerDone = finish;
+    picker = new BrowserWindow({ ...display.bounds, transparent: true, frame: false, hasShadow: false, resizable: false, skipTaskbar: true, alwaysOnTop: true, show: false, webPreferences });
+    picker.setAlwaysOnTop(true, "screen-saver");
+    picker.setContentProtection(true);
+    picker.loadFile(ui("picker"));
+    picker.once("ready-to-show", () => {
+      picker?.show();
+      picker?.setBounds(display.bounds);
+      picker?.focus();
+    });
+    globalShortcut.register("Escape", () => finish(null));
+  });
+}
+
+ipcMain.on("picker-cancel", () => pickerDone?.(null));
+ipcMain.on("picker-done", (_e, drag: { x: number; y: number; w: number; h: number }) => {
+  const b = picker?.getBounds();
+  if (!b || !pickerDone) return;
+  pickerDone(drag.w < 16 || drag.h < 16 ? null : { x: b.x + drag.x, y: b.y + drag.y, w: drag.w, h: drag.h });
+});
 
 // The bar is wider while the drawing tools show, like the Mac's. Its window includes the hint line.
 const BAR_WIDTH = 330;
@@ -226,8 +280,8 @@ async function locateRegion(display: Display, got: { width: number; height: numb
 }
 
 /** `region` is the capture's size when the dialog gave a region rather than a whole screen. */
-async function beginRecording(display: Display, region: { width: number; height: number } | null) {
-  overlay = new BrowserWindow({ ...display.bounds, type: "notification", transparent: true, frame: false, hasShadow: false, resizable: false, skipTaskbar: true, focusable: false, alwaysOnTop: true, show: false, webPreferences });
+async function beginRecording(display: Display, region: { width: number; height: number } | null, chosenArea: Rect | null = null) {
+  overlay = new BrowserWindow({ ...display.bounds, ...overlayType, transparent: true, frame: false, hasShadow: false, resizable: false, skipTaskbar: true, focusable: false, alwaysOnTop: true, show: false, webPreferences });
   overlay.setAlwaysOnTop(true, "screen-saver");
   overlay.setVisibleOnAllWorkspaces(true);
   overlay.setIgnoreMouseEvents(true);
@@ -243,7 +297,8 @@ async function beginRecording(display: Display, region: { width: number; height:
   const counted = new Promise<void>((resolve) => ipcMain.once("countdown-done", () => resolve()));
   overlay.webContents.send("countdown");
   const located = region ? await locateRegion(display, region) : null;
-  if (located) overlay.webContents.send("region", located);
+  const outlined = located ?? (chosenArea && chosenArea.w < display.bounds.width ? chosenArea : null);
+  if (outlined) overlay.webContents.send("region", outlined);
 
   recordingId = newRecordingId();
   rawDir = join(paths.recordings, recordingId, "raw");
@@ -251,7 +306,7 @@ async function beginRecording(display: Display, region: { width: number; height:
   const raw: RawSession = {
     mode: "area",
     display: rect(display.bounds),
-    area: located ?? rect(display.bounds),
+    area: located ?? chosenArea ?? rect(display.bounds),
     regionFromDialog: region !== null,
     regionLocated: located !== null,
     createdAt: new Date().toISOString(),
@@ -261,9 +316,11 @@ async function beginRecording(display: Display, region: { width: number; height:
   segment = 0;
   elapsedBefore = 0;
 
-  bar = new BrowserWindow({ ...placeBar(display, located), type: "notification", transparent: true, hasShadow: false, frame: false, resizable: false, skipTaskbar: true, alwaysOnTop: true, show: false, webPreferences });
+  bar = new BrowserWindow({ ...placeBar(display, located ?? chosenArea), ...overlayType, transparent: true, hasShadow: false, frame: false, resizable: false, skipTaskbar: true, alwaysOnTop: true, show: false, webPreferences });
   bar.setAlwaysOnTop(true, "screen-saver");
   bar.setVisibleOnAllWorkspaces(true);
+  // Windows can leave the bar out of the capture, like the Mac. Linux can't.
+  bar.setContentProtection(true);
   bar.loadFile(ui("bar"));
   bar.once("ready-to-show", () => bar?.showInactive());
 
@@ -327,7 +384,7 @@ async function stopRecording() {
 async function runProcessing(id: string) {
   const review = openReview(id);
   try {
-    await processRecording(id, paths, vpFrames);
+    await processRecording(id, paths, vpFrames, renderOptions);
     if (!review.isDestroyed()) review.webContents.send("review-ready", reviewData(id));
   } catch (e) {
     console.error("processing failed", e);
@@ -414,7 +471,7 @@ function reviewData(id: string) {
   const m = readJSON<Manifest>(join(dir, "manifest.json"));
   return {
     id,
-    video: join(dir, "video.mp4"),
+    video: pathToFileURL(join(dir, "video.mp4")).href,
     duration: m.duration,
     transcript: m.transcript.map((s) => s.text).join(" "),
     transcription: m.transcription,
@@ -428,12 +485,16 @@ function openReview(id: string) {
   let decided = false;
   const decide = (channel: string, edits?: { transcriptText: string; note: string }) => {
     decided = true;
-    if (channel === "review-copy") clipboard.writeText(finalize(id, edits!, paths, vpFrames));
+    if (channel === "review-copy-wsl") clipboard.writeText(toWslPath(finalize(id, edits!, paths, vpFrames, renderOptions)));
+    else if (channel === "review-copy") clipboard.writeText(finalize(id, edits!, paths, vpFrames, renderOptions));
     win.destroy();
     recordingsWindow?.webContents.send("recordings-changed");
   };
   const copy = (e: Electron.IpcMainEvent, edits: { transcriptText: string; note: string }) => {
     if (e.sender === win.webContents) decide("review-copy", edits);
+  };
+  const copyWsl = (e: Electron.IpcMainEvent, edits: { transcriptText: string; note: string }) => {
+    if (e.sender === win.webContents) decide("review-copy-wsl", edits);
   };
   const discard = async (e: Electron.IpcMainEvent) => {
     if (e.sender !== win.webContents) return;
@@ -441,12 +502,14 @@ function openReview(id: string) {
     await trashRecording(id);
   };
   ipcMain.on("review-copy", copy);
+  ipcMain.on("review-copy-wsl", copyWsl);
   ipcMain.on("review-discard", discard);
   win.on("closed", () => {
     ipcMain.off("review-copy", copy);
+    ipcMain.off("review-copy-wsl", copyWsl);
     ipcMain.off("review-discard", discard);
     // Closing without choosing keeps it, so the reference can still be copied from Recordings.
-    if (!decided && readMeta(id)?.status === "reviewing") finalize(id, {}, paths, vpFrames);
+    if (!decided && readMeta(id)?.status === "reviewing") finalize(id, {}, paths, vpFrames, renderOptions);
     recordingsWindow?.webContents.send("recordings-changed");
   });
   return win;
@@ -492,12 +555,13 @@ function openRecordings() {
   recordingsWindow.on("closed", () => (recordingsWindow = undefined));
 }
 
-ipcMain.handle("recordings-list", () => listRecordings().map((m) => ({ ...m, overview: join(paths.recordings, m.id, "overview.jpg") })));
+ipcMain.handle("recordings-list", () => listRecordings().map((m) => ({ ...m, overview: pathToFileURL(join(paths.recordings, m.id, "overview.jpg")).href })));
 ipcMain.on("recordings-review", (_e, id: string) => {
   const review = openReview(id);
   review.webContents.once("did-finish-load", () => review.webContents.send("review-ready", reviewData(id)));
 });
 ipcMain.handle("recordings-copy", (_e, id: string) => clipboard.writeText(join(paths.recordings, id, "timeline.md")));
+ipcMain.handle("recordings-copy-wsl", (_e, id: string) => clipboard.writeText(toWslPath(join(paths.recordings, id, "timeline.md"))));
 ipcMain.handle("recordings-delete", async (_e, id: string) => {
   await trashRecording(id);
   recordingsWindow?.webContents.send("recordings-changed");
@@ -554,14 +618,15 @@ app.whenReady().then(() => {
   session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
     // On Wayland this call is what opens the system's screen-share dialog.
     const sources = await desktopCapturer.getSources({ types: ["screen"] });
-    if (sources[0]) callback({ video: sources[0] });
+    const wanted = sources.find((s) => s.display_id === String(captureDisplay?.id)) ?? sources[0];
+    if (wanted) callback({ video: wanted });
     else callback({});
   });
   tray = new Tray(trayIcon());
   tray.setToolTip("Video Prompt");
   tray.on("click", toggleTrayMenu);
   refreshTray();
-  const ok = globalShortcut.register("Ctrl+Alt+Shift+R", () => void startFlow());
+  const ok = globalShortcut.register("Ctrl+Alt+Shift+R", () => void startFlow(isWindows ? "area" : "dialog"));
   if (!ok) console.error("Ctrl+Alt+Shift+R is taken; the tray menu still starts a recording");
   void sweep();
   setInterval(() => void sweep(), 3600_000);

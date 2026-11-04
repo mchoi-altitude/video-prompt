@@ -58,7 +58,8 @@ export async function mediaDuration(file: string): Promise<number> {
 /** `whisper-cli`, under either name it's installed as; null when it or the model is missing. */
 export function findWhisper(modelsDir: string): { cli: string; model: string } | null {
   const model = process.env.VIDEO_PROMPT_WHISPER_MODEL ?? join(modelsDir, "ggml-base.en.bin");
-  const candidates = [process.env.VIDEO_PROMPT_WHISPER_CLI, "/usr/bin/whisper-cli", "/usr/bin/whisper-cpp", join(__dirname, "../../vendor/bin/whisper-cli")];
+  const bundled = join(__dirname, "../../vendor/bin", process.platform === "win32" ? "whisper-cli.exe" : "whisper-cli");
+  const candidates = [process.env.VIDEO_PROMPT_WHISPER_CLI, "/usr/bin/whisper-cli", "/usr/bin/whisper-cpp", bundled];
   const cli = candidates.find((c): c is string => !!c && existsSync(c));
   return cli && existsSync(model) ? { cli, model } : null;
 }

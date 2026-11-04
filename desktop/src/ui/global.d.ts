@@ -4,6 +4,11 @@ type Prefs = { retention: { days: number } | { keepLast: number } | "never"; dra
 type ReviewData = { id: string; video: string; duration: number; transcript: string; transcription: string; note: string };
 
 declare const vp: {
+  isWindows: boolean;
+  pickerDone(drag: { x: number; y: number; w: number; h: number }): void;
+  pickerCancel(): void;
+  reviewCopyWsl(edits: { transcriptText: string; note: string }): void;
+  recordingsCopyWsl(id: string): Promise<void>;
   trayMenuInfo(): Promise<{ busy: boolean; canStop: boolean; count: number }>;
   trayMenuAction(action: string): void;
   trayMenuClose(): void;

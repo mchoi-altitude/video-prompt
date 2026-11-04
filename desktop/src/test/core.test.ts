@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { Manifest, Manifest as M, RecordingMeta } from "../core/models";
-import { buildTimeline, expiredRecordings, type Retention, describeStroke, renderTimeline, segmentOffsets, sentences, stamp, titleFor, toFramePixels } from "../core/timeline";
+import { buildTimeline, expiredRecordings, toWslPath, type Retention, describeStroke, renderTimeline, segmentOffsets, sentences, stamp, titleFor, toFramePixels } from "../core/timeline";
 import { finalize, makePaths, processRecording, readJSON, recoverInterrupted } from "../process/processor";
 import { parseWhisper } from "../process/tools";
 import { blended, locate, patternSteps, SAMPLE_INSET, stepLevel, type RGB, type Step } from "../core/locate";
@@ -40,7 +40,7 @@ test("the timeline matches the Mac's golden file, apart from the design's §7 di
     .replace("call `get_frames` (from, to, fps) if you have the Video Prompt tools, or run", "run")
     .replace("--from 12.0 --to 14.0", "--from 0.0 --to 2.0")
     .replace("- **[00:07.0]** The recorded window was hidden\n", "");
-  assert.equal(renderTimeline(m, "/R", "/Apps/vp-frames"), golden);
+  assert.equal(renderTimeline(m, "/R", "/Apps/vp-frames").replaceAll("\\", "/"), golden);
 });
 
 test("timeline leaves out click wording where clicks can't be logged", () => {
@@ -149,6 +149,19 @@ test("a very short recording still gets its overview", async () => {
   writeFileSync(join(raw, "events.jsonl"), "");
   assert.equal((await processRecording(id, paths, "/vp-frames")).status, "reviewing");
   assert.ok(readFileSync(join(paths.recordings, id, "overview.jpg")).length > 0);
+});
+
+test("Windows timelines give the command for each shell, and WSL paths", () => {
+  assert.equal(toWslPath("C:\\Users\\A B\\x.md"), "/mnt/c/Users/A B/x.md");
+  const m: M = {
+    id: "x", duration: 5, mode: "area", transcript: [], transcription: "noAudio",
+    video: { file: "video.mp4", width: 100, height: 100, fps: 10, hasAudio: false },
+    overview: "overview.jpg", overviewSecondsPerTile: 1, strokes: [], clicks: [], clicksLogged: false, timeline: [],
+  };
+  const text = renderTimeline(m, "C:\\R", "C:\\App\\vp-frames.cmd", { posixVpFrames: "C:\\App\\vp-frames" });
+  assert.match(text, /PowerShell: `& "C:\\App\\vp-frames\.cmd"/);
+  assert.match(text, /Git Bash: `"C:\/App\/vp-frames"/);
+  assert.match(text, /WSL: `"\/mnt\/c\/App\/vp-frames"/);
 });
 
 test("whisper output drops bracketed non-speech", () => {
@@ -265,8 +278,12 @@ test("processing joins paused segments, crops to the area and maps marks to vide
   assert.match(text, /## Typed note\n\nA note/);
   assert.equal(readJSON<RecordingMeta>(join(dir, "meta.json")).status, "ready");
 
-  const script = join(repo, "desktop/bin/vp-frames");
-  const out = execFileSync(script, [join(dir, "video.mp4"), "--from", "0.5", "--to", "1", "--fps", "2"]).toString().trim().split("\n");
-  assert.deepEqual(out.map((p) => p.replace(/.*\//, "")), ["001_t00000.50s.jpg", "002_t00001.00s.jpg"]);
+  const video = join(dir, "video.mp4");
+  const frameArgs = ["--from", "0.5", "--to", "1", "--fps", "2"];
+  const printed = process.platform === "win32"
+    ? execSync(`"${join(repo, "desktop/bin/vp-frames.cmd")}" "${video}" ${frameArgs.join(" ")}`)
+    : execFileSync(join(repo, "desktop/bin/vp-frames"), [video, ...frameArgs]);
+  const out = printed.toString().trim().split(/\r?\n/);
+  assert.deepEqual(out.map((p) => p.replace(/.*[\\/]/, "")), ["001_t00000.50s.jpg", "002_t00001.00s.jpg"]);
   assert.match(execFileSync("ffprobe", ["-v", "error", "-show_entries", "stream=width", "-of", "csv=p=0", out[0]]).toString(), /800/);
 });

@@ -6,9 +6,9 @@
   "license": "MIT",
   "main": "dist/main/main.js",
   "scripts": {
-    "build": "tsc && cp src/ui/*.html dist/ui/",
+    "build": "tsc && node scripts/copy-ui.js",
     "test": "npm run build && electron --version && node --test dist/test/",
-    "start": "npm run build && electron . --ozone-platform=x11",
+    "start": "npm run build && node scripts/start.js",
     "package": "scripts/build-package.sh"
   },
   "devDependencies": {

@@ -1,7 +1,7 @@
 // Port of Sources/VPProcess/Processor.swift and Finalize.swift, with ffmpeg in place of AVFoundation.
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { buildTimeline, describeStroke, renderTimeline, round2, segmentOffsets, sentences, titleFor, toFramePixels } from "../core/timeline";
+import { buildTimeline, describeStroke, renderTimeline, round2, type RenderOptions, segmentOffsets, sentences, titleFor, toFramePixels } from "../core/timeline";
 import {
   VIDEO_FPS,
   VIDEO_MAX_HEIGHT,
@@ -60,14 +60,14 @@ function segmentNumber(name: string): number | null {
 }
 
 /** Turns `recordings/<id>/raw/` into a `reviewing` recording. On failure `raw/` is kept for a Retry. */
-export async function processRecording(id: string, paths: Paths, vpFrames: string): Promise<RecordingMeta> {
+export async function processRecording(id: string, paths: Paths, vpFrames: string, options: RenderOptions = {}): Promise<RecordingMeta> {
   const dir = join(paths.recordings, id);
   const raw = join(dir, "raw");
   const session = readJSON<RawSession>(join(raw, "session.json"));
   const meta: RecordingMeta = { id, title: "Processing…", createdAt: session.createdAt, duration: 0, mode: "area", status: "processing", sizeBytes: 0 };
   writeJSON(join(dir, "meta.json"), meta);
   try {
-    const done = await runPipeline(id, dir, raw, session, meta, paths, vpFrames);
+    const done = await runPipeline(id, dir, raw, session, meta, paths, vpFrames, options);
     writeJSON(join(dir, "meta.json"), done);
     return done;
   } catch (e) {
@@ -77,7 +77,7 @@ export async function processRecording(id: string, paths: Paths, vpFrames: strin
   }
 }
 
-async function runPipeline(id: string, dir: string, raw: string, session: RawSession, meta: RecordingMeta, paths: Paths, vpFrames: string): Promise<RecordingMeta> {
+async function runPipeline(id: string, dir: string, raw: string, session: RawSession, meta: RecordingMeta, paths: Paths, vpFrames: string, options: RenderOptions): Promise<RecordingMeta> {
   const names = readdirSync(raw).filter((n) => segmentNumber(n) !== null).sort();
   if (!names.length) throw new Error("no segments");
   const files = names.map((n) => join(raw, n));
@@ -180,11 +180,11 @@ async function runPipeline(id: string, dir: string, raw: string, session: RawSes
     overviewSecondsPerTile: secondsPerTile,
     strokes,
     clicks,
-    clicksLogged: process.platform === "win32",
+    clicksLogged: false, // Nothing logs clicks yet. On Windows it needs a native mouse hook.
     timeline: buildTimeline(transcript, strokes, clicks, clears, pauses),
   };
   writeJSON(join(dir, "manifest.json"), manifest);
-  writeAtomically(join(dir, "timeline.md"), renderTimeline(manifest, dir, vpFrames));
+  writeAtomically(join(dir, "timeline.md"), renderTimeline(manifest, dir, vpFrames, options));
   rmSync(raw, { recursive: true, force: true });
   return {
     ...meta,
@@ -277,7 +277,7 @@ export function recoverInterrupted(paths: Paths): string[] {
 }
 
 /** Applies the review panel's edits, rewrites `manifest.json` and `timeline.md`, and marks it `ready`. */
-export function finalize(id: string, edits: { transcriptText?: string; note?: string }, paths: Paths, vpFrames: string): string {
+export function finalize(id: string, edits: { transcriptText?: string; note?: string }, paths: Paths, vpFrames: string, options: RenderOptions = {}): string {
   const dir = join(paths.recordings, id);
   const m = readJSON<Manifest>(join(dir, "manifest.json"));
   const text = edits.transcriptText?.trim();
@@ -289,7 +289,7 @@ export function finalize(id: string, edits: { transcriptText?: string; note?: st
   if (edits.note !== undefined) m.note = edits.note || undefined;
   writeJSON(join(dir, "manifest.json"), m);
   const timeline = join(dir, "timeline.md");
-  writeAtomically(timeline, renderTimeline(m, dir, vpFrames));
+  writeAtomically(timeline, renderTimeline(m, dir, vpFrames, options));
   const meta = readJSON<RecordingMeta>(join(dir, "meta.json"));
   writeJSON(join(dir, "meta.json"), { ...meta, status: "ready", sizeBytes: folderSize(dir) });
   return timeline;

@@ -1,0 +1,26 @@
+name: Desktop on Windows
+
+on:
+  push:
+    branches: [main, feat/windows-desktop]
+    paths: ["desktop/**", ".github/workflows/desktop-windows.yml", "Tests/VPCoreTests/Golden/**"]
+  pull_request:
+    paths: ["desktop/**", ".github/workflows/desktop-windows.yml", "Tests/VPCoreTests/Golden/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - run: choco install ffmpeg --no-progress -y
+      - run: npm ci
+      - run: npm test

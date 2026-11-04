@@ -137,8 +137,16 @@ function exampleRange(m: Manifest): [string, string] {
   return [from.toFixed(1), to.toFixed(1)];
 }
 
+/** `C:\\Users\\a b\\x` → `/mnt/c/Users/a b/x`, the form WSL needs. */
+export function toWslPath(windowsPath: string): string {
+  return windowsPath.replace(/^([A-Za-z]):/, (_, drive: string) => `/mnt/${drive.toLowerCase()}`).replace(/\\/g, "/");
+}
+
+/** On Windows, `posixVpFrames` is the shell form of the command, for Git Bash and WSL. */
+export type RenderOptions = { posixVpFrames?: string };
+
 /** `timeline.md`: what the user said and drew, with timestamps, plus how to look at the video. */
-export function renderTimeline(m: Manifest, recordingDir: string, vpFrames: string): string {
+export function renderTimeline(m: Manifest, recordingDir: string, vpFrames: string, options: RenderOptions = {}): string {
   const video = join(recordingDir, m.video.file);
   const [from, to] = exampleRange(m);
   const lines = [
@@ -159,8 +167,17 @@ export function renderTimeline(m: Manifest, recordingDir: string, vpFrames: stri
     "",
     `- **Video:** \`${video}\` (${m.video.width}×${m.video.height}, ${m.video.fps} fps${m.video.hasAudio ? ", with narration audio" : ""}). It shows only the selected area.`,
     `- **Overview:** \`${join(recordingDir, m.overview)}\`: one thumbnail per ${every}. Look at it first.`,
-    "- **Look closer at any moment:** run",
-    `  \`"${vpFrames}" "${video}" --from ${from} --to ${to} --fps 5\` and view the JPEGs it prints with your Read tool.`,
+    ...(options.posixVpFrames
+      ? [
+          "- **Look closer at any moment:** run the command for your shell, and view the JPEGs it prints with your Read tool.",
+          `  PowerShell: \`& "${vpFrames}" "${video}" --from ${from} --to ${to} --fps 5\``,
+          `  Git Bash: \`"${options.posixVpFrames.replace(/\\/g, "/")}" "${video.replace(/\\/g, "/")}" --from ${from} --to ${to} --fps 5\``,
+          `  WSL: \`"${toWslPath(options.posixVpFrames)}" "${toWslPath(video)}" --from ${from} --to ${to} --fps 5\``,
+        ]
+      : [
+          "- **Look closer at any moment:** run",
+          `  \`"${vpFrames}" "${video}" --from ${from} --to ${to} --fps 5\` and view the JPEGs it prints with your Read tool.`,
+        ]),
     `  Check the moments the ${pointers} point to; brief states may last under a second.`,
     "",
     "## Timeline",

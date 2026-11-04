@@ -3,6 +3,11 @@ import { contextBridge, ipcRenderer } from "electron";
 const on = (channel: string) => (fn: (...args: any[]) => void) => ipcRenderer.on(channel, (_e, ...args) => fn(...args));
 
 contextBridge.exposeInMainWorld("vp", {
+  isWindows: process.platform === "win32",
+  pickerDone: (drag: object) => ipcRenderer.send("picker-done", drag),
+  pickerCancel: () => ipcRenderer.send("picker-cancel"),
+  reviewCopyWsl: (edits: object) => ipcRenderer.send("review-copy-wsl", edits),
+  recordingsCopyWsl: (id: string) => ipcRenderer.invoke("recordings-copy-wsl", id),
   trayMenuInfo: () => ipcRenderer.invoke("tray-menu-info"),
   trayMenuAction: (action: string) => ipcRenderer.send("tray-menu-action", action),
   trayMenuClose: () => ipcRenderer.send("tray-menu-close"),

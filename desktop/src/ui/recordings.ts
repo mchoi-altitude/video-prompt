@@ -17,7 +17,6 @@
   };
 
   const megabytes = (bytes: number) => `${(bytes / 1_000_000).toFixed(1)} MB`;
-  const fileUrl = (path: string) => `file://${path.split("/").map(encodeURIComponent).join("/")}`;
 
   const statusText = (m: Meta) => {
     if (m.status === "processing") return "Processing…";
@@ -85,7 +84,7 @@
     const thumb = document.createElement("img");
     thumb.className = "thumb";
     thumb.alt = "";
-    if (m.status !== "processing" && m.status !== "processingFailed") thumb.src = fileUrl(m.overview);
+    if (m.status !== "processing" && m.status !== "processingFailed") thumb.src = m.overview;
 
     const text = div("text");
     text.append(div("title", m.title), div("sub", whenText(m)));
@@ -105,7 +104,15 @@
     trash.innerHTML = '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6.5 7l1 12a1.5 1.5 0 0 0 1.5 1.4h6a1.5 1.5 0 0 0 1.5-1.4l1-12M10 11v5M14 11v5" /></svg>';
     trash.onclick = () => void vp.recordingsDelete(m.id);
 
-    r.append(check, thumb, text, state, div("size", megabytes(m.sizeBytes)), act, trash);
+    r.append(check, thumb, text, state, div("size", megabytes(m.sizeBytes)), act);
+    if (vp.isWindows && m.status === "ready") {
+      r.append(button("WSL path", (b) => {
+        void vp.recordingsCopyWsl(m.id);
+        b.textContent = "Copied ✓";
+        setTimeout(() => (b.textContent = "WSL path"), 1500);
+      }));
+    }
+    r.append(trash);
     return r;
   };
 

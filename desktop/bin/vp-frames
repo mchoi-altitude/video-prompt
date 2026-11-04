@@ -1,6 +1,22 @@
 #!/bin/sh
 # Runs vp-frames with the app's own Electron, so Claude doesn't need Node installed.
+# Works on Linux, and on Windows from Git Bash and from WSL.
 here="$(dirname "$(readlink -f "$0")")"
-electron="$here/../../../electron"                                 # installed: resources/app/bin
-[ -x "$electron" ] || electron="$here/../node_modules/electron/dist/electron"  # from source
+find_electron() {
+  for e in "$here/../../../$1" "$here/../node_modules/electron/dist/$1"; do
+    [ -x "$e" ] && { echo "$e"; return; }
+  done
+}
+if [ -n "$WSL_DISTRO_NAME" ]; then
+  # A Windows program: its paths go in and come out in Windows form.
+  electron="$(find_electron electron.exe)"
+  script="$(wslpath -w "$here/../dist/frames/main.js")"
+  video="$(wslpath -w "$1")"
+  shift
+  export ELECTRON_RUN_AS_NODE=1 WSLENV=ELECTRON_RUN_AS_NODE
+  "$electron" "$script" "$video" "$@" | tr -d '\r' | while IFS= read -r line; do wslpath -u "$line"; done
+  exit
+fi
+electron="$(find_electron electron)"
+[ -n "$electron" ] || electron="$(find_electron electron.exe)"
 ELECTRON_RUN_AS_NODE=1 exec "$electron" "$here/../dist/frames/main.js" "$@"

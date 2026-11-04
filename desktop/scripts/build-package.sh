@@ -26,7 +26,7 @@ cp -r node_modules/electron/dist "$STAGE/video-prompt"
 
 APP="$STAGE/video-prompt/resources/app"
 mkdir -p "$APP/vendor/bin"
-cp package.json "$APP/"
+cp package.json ../LICENSE "$APP/"
 cp -r dist bin "$APP/"
 rm -rf "$APP/dist/test"
 cp vendor/whisper.cpp/build-portable/bin/whisper-cli "$APP/vendor/bin/"

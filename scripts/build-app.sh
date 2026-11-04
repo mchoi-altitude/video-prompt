@@ -13,6 +13,7 @@ APP="build/Video Prompt.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/"
 cp "$BIN/VideoPrompt" "$BIN/vp-mcp" "$BIN/vp-frames" "$APP/Contents/MacOS/"
 # VIDEO_PROMPT_SIGN=- forces ad-hoc (e.g. when the keychain would prompt).
 IDENTITY="${VIDEO_PROMPT_SIGN:-}"

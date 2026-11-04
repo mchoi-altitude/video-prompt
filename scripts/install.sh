@@ -54,7 +54,7 @@ say "4/4 Starting Video Prompt"
 [ -n "${VP_NO_OPEN:-}" ] || open "$PREFIX/$APP"
 cat <<'MSG'
 
-Done. Look for the ◉ icon at the right of your menu bar (⌃⌥⌘R records the Chrome window).
+Done. Look for the V in square corners at the right of your menu bar (⌃⌥⌘R records the Chrome window).
 The first time, macOS asks for Screen Recording and Microphone access for Video Prompt.
 
 To let Claude Code fetch recordings, paste these into Claude Code once:

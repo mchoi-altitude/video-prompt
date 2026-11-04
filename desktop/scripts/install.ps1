@@ -16,8 +16,15 @@ function Stop-App {
   Start-Sleep -Milliseconds 500
 }
 
+# Plain .NET rather than Get-FileHash, which isn't found when PowerShell 7 launches this script.
+function Get-Sha256($Path) {
+  $Stream = [IO.File]::OpenRead($Path)
+  try { -join ([Security.Cryptography.SHA256]::Create().ComputeHash($Stream) | ForEach-Object { $_.ToString("x2") }) }
+  finally { $Stream.Dispose() }
+}
+
 function Test-Model {
-  (Test-Path $Model) -and ((Get-FileHash $Model -Algorithm SHA256).Hash -ieq $ModelSha256)
+  (Test-Path $Model) -and ((Get-Sha256 $Model) -ieq $ModelSha256)
 }
 
 if ($Uninstall) {
@@ -45,7 +52,7 @@ if (Test-Model) {
   Write-Host "    already downloaded"
 } else {
   Invoke-WebRequest -Uri $ModelUrl -OutFile "$Model.part" -UseBasicParsing
-  if ((Get-FileHash "$Model.part" -Algorithm SHA256).Hash -ieq $ModelSha256) {
+  if ((Get-Sha256 "$Model.part") -ieq $ModelSha256) {
     Move-Item "$Model.part" $Model -Force
     Write-Host "    downloaded and verified"
   } else {

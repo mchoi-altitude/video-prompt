@@ -54,6 +54,18 @@ jobs:
           if ($p.HasExited) { throw "the app exited at launch with code $($p.ExitCode)" }
           "The app stayed running for 10 seconds"
           Stop-Process -Id $p.Id -Force
+      - name: Take screenshots of the app in use
+        continue-on-error: true
+        shell: powershell
+        run: |
+          $app = "$env:LOCALAPPDATA\Programs\VideoPrompt"
+          scripts\windows-tour.ps1 -Exe "$app\electron.exe" -Ffmpeg "$app\resources\app\vendor\bin\ffmpeg.exe" -Out "$env:RUNNER_TEMP\tour"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-tour
+          path: ${{ runner.temp }}/tour
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         with:
           name: VideoPrompt-windows-beta

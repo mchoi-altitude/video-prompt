@@ -7,6 +7,32 @@ Where this doc says "same as Mac", that spec and the code it names define the be
 Labels: **[Decided]** means Michael chose it. **[Proposed]** means the author's call, open to
 correction. Unlabeled detail follows from those.
 
+## Updates after building the Fedora app
+
+The Fedora app in `desktop/` was built and tested on one machine (Fedora 44, Plasma 6.8, one monitor at
+100%). These override the sections below where they differ. Windows hasn't been started, so the
+Windows parts below are still the plan.
+
+- **One Record option, no area picker (§2, §4).** KDE's dialog already offers full screen or a region,
+  so an extra picker felt like being asked twice. The tray menu is Record…, Recordings…, Settings…
+  and Quit Video Prompt, plus Stop recording while recording. Left click opens the same items in a small window.
+- **The dialog appears on every recording (§4, §9).** The user wants to choose each time, so there's
+  no restore token and no "Change monitor…". Electron doesn't say which monitor was chosen, so with
+  several monitors the overlay can open on the wrong one.
+- **Finding a region (§7).** Electron doesn't report where a region is, and the app needs that for
+  the outline, mark coordinates and bar placement. During the countdown, the overlay paints a position
+  code at about 3.5% opacity, and the app reads it from the capture as differences from the screen.
+  See `desktop/src/core/locate.ts`. Failed readings are rejected, so the recording has no outline and
+  its marks have no coordinates. Color-coded patterns gave wrong positions, because capture alters colors.
+- **XWayland (§9 test 1).** Native Wayland passed basic drawing, but the overlay could cover the
+  control bar. The app runs with `--ozone-platform=x11` and uses the `notification` window type.
+- **Review (§4).** The buttons are Copy reference and Discard, and the video plays with sound.
+  Copy WSL path isn't built, since it's Windows only.
+- **Recordings (§4).** It matches the Mac's window rather than the simple list planned here.
+- **Interrupted recordings.** At launch, they're listed as failed with a Retry.
+- **Not built yet:** first-run window, packaging, bundled ffmpeg and whisper.cpp (§8), and
+  `vp-frames` that runs without the app's own Electron folder.
+
 ## 1. Why
 
 AltitudeIQ's team likes Video Prompt, but it only runs on Macs. Teammates on Windows and Fedora

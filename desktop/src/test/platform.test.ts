@@ -1,7 +1,7 @@
 // Both systems' answers, checked on either one. The Linux ones are what the app used before Windows support.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { captureMode, dataRoot, electronSwitches, hidesBarFromCapture, logsClicks, modelCandidates, restrictsDataFolder, toolPath, vpFramesPath, whisperCandidates, windowType } from "../core/platform";
+import { barTakesFocus, keepsDefaultMenu, captureMode, dataRoot, electronSwitches, hidesBarFromCapture, logsClicks, modelCandidates, restrictsDataFolder, toolPath, vpFramesPath, whisperCandidates, windowType } from "../core/platform";
 
 const none = () => false;
 const all = () => true;
@@ -12,6 +12,8 @@ test("Linux keeps its paths and window settings", () => {
   assert.equal(restrictsDataFolder("linux"), true);
   assert.deepEqual(windowType("linux"), { type: "notification" });
   assert.equal(hidesBarFromCapture("linux"), false);
+  assert.equal(barTakesFocus("linux"), true);
+  assert.equal(keepsDefaultMenu("linux"), true);
   assert.equal(captureMode("linux"), "dialog");
   assert.equal(logsClicks("linux"), false);
   assert.deepEqual(electronSwitches("linux"), ["--ozone-platform=x11"]);
@@ -34,6 +36,8 @@ test("Windows uses AppData, its own picker and the bundled tools", () => {
   assert.equal(restrictsDataFolder("win32"), false);
   assert.deepEqual(windowType("win32"), {});
   assert.equal(hidesBarFromCapture("win32"), true);
+  assert.equal(barTakesFocus("win32"), false);
+  assert.equal(keepsDefaultMenu("win32"), false);
   assert.equal(captureMode("win32"), "picker");
   assert.equal(logsClicks("win32"), false);
   assert.deepEqual(electronSwitches("win32"), []);

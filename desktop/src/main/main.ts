@@ -8,7 +8,7 @@ import type { Manifest, Point, RawEvent, RawSession, Rect, RecordingMeta, Stroke
 import { appBitmap, trayBitmap } from "./icon";
 import { locate, patternSteps, SAMPLE_INSET, type Sample } from "../core/locate";
 import { expiredRecordings, type Retention } from "../core/timeline";
-import { dataRoot, restrictsDataFolder, vpFramesPath, windowType } from "../core/platform";
+import { barTakesFocus, dataRoot, hidesBarFromCapture, keepsDefaultMenu, restrictsDataFolder, vpFramesPath, windowType } from "../core/platform";
 import { finalize, makePaths, processRecording, recoverInterrupted, readJSON, writeJSON } from "../process/processor";
 
 const platform = process.platform;
@@ -264,8 +264,10 @@ async function beginRecording(display: Display, region: { width: number; height:
   segment = 0;
   elapsedBefore = 0;
 
-  bar = new BrowserWindow({ ...placeBar(display, located), ...windowType(platform), transparent: true, hasShadow: false, frame: false, resizable: false, skipTaskbar: true, alwaysOnTop: true, show: false, webPreferences });
+  bar = new BrowserWindow({ ...placeBar(display, located), ...windowType(platform), transparent: true, hasShadow: false, frame: false, resizable: false, skipTaskbar: true, focusable: barTakesFocus(platform), alwaysOnTop: true, show: false, webPreferences });
   bar.setAlwaysOnTop(true, "screen-saver");
+  // Like the Mac: the bar stays out of the video. Fedora can't do this, so it places the bar outside the region.
+  if (hidesBarFromCapture(platform)) bar.setContentProtection(true);
   bar.setVisibleOnAllWorkspaces(true);
   bar.loadFile(ui("bar"));
   bar.once("ready-to-show", () => bar?.showInactive());
@@ -552,6 +554,7 @@ if (!app.requestSingleInstanceLock()) app.quit();
 app.on("second-instance", () => toggleTrayMenu());
 
 app.whenReady().then(() => {
+  if (!keepsDefaultMenu(platform)) Menu.setApplicationMenu(null);
   mkdirSync(paths.recordings, { recursive: true });
   if (!process.env.VIDEO_PROMPT_HOME && restrictsDataFolder(platform)) chmodSync(root, 0o700);
   settings = loadSettings();

@@ -25,6 +25,12 @@ export const windowType = (p: Platform): { type?: string } => (p === "win32" ? {
 /** Fedora can't hide the bar from the capture. Windows can (`setContentProtection`). */
 export const hidesBarFromCapture = (p: Platform) => p === "win32";
 
+/** On Windows the bar never takes keyboard focus, like the Mac's: keys such as F11 stay with the app
+ * the user is showing. Electron's default menu also goes, or its shortcuts (F11 full screen, Ctrl+R
+ * reload, Ctrl+W close) would act on our windows. Fedora keeps both as they were. */
+export const barTakesFocus = (p: Platform) => p !== "win32";
+export const keepsDefaultMenu = (p: Platform) => p !== "win32";
+
 /** Fedora's system dialog chooses what's recorded. Windows has none, so the app's own picker does. */
 export const captureMode = (p: Platform): "dialog" | "picker" => (p === "win32" ? "picker" : "dialog");
 

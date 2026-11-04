@@ -1,0 +1,205 @@
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test } from "node:test";
+import type { Manifest, Manifest as M, RecordingMeta } from "../core/models";
+import { buildTimeline, describeStroke, renderTimeline, segmentOffsets, sentences, stamp, titleFor, toFramePixels } from "../core/timeline";
+import { finalize, makePaths, processRecording, readJSON } from "../process/processor";
+import { parseWhisper } from "../process/tools";
+import { locate, patternSteps, SAMPLE_INSET, showsStep, stepLevel, type RGB } from "../core/locate";
+
+const repo = join(__dirname, "../../..");
+const circle: number[][] = [[47, 554], [90, 514], [180, 514], [223, 554], [180, 594], [90, 594], [47, 560], [50, 555], [47, 554]];
+
+test("the timeline matches the Mac's golden file, apart from the design's §7 differences", () => {
+  const strokes = [{ start: 3, end: 4, tool: "pen" as const, bbox: [47, 514, 223, 594], description: describeStroke(circle, "pen").text }];
+  const clicks = [{ t: 6.2, x: 812, y: 96 }];
+  const transcript = [
+    { start: 1, end: 2.5, text: "So, the settings page." },
+    { start: 3, end: 4.5, text: "See this Save button?" },
+  ];
+  const m: Manifest = {
+    id: "20261006-141402",
+    duration: 12.5,
+    mode: "area",
+    transcript,
+    transcription: "ok",
+    video: { file: "video.mp4", width: 1394, height: 1050, fps: 10, hasAudio: true },
+    overview: "overview.jpg",
+    overviewSecondsPerTile: 1,
+    strokes,
+    clicks,
+    clicksLogged: true,
+    timeline: buildTimeline(transcript, strokes, clicks, [], [8.5]),
+    note: "Same on Billing.",
+  };
+  const golden = readFileSync(join(repo, "Tests/VPCoreTests/Golden/timeline.md"), "utf8")
+    .replace("It shows only the recorded window.", "It shows only the selected area.")
+    .replace("call `get_frames` (from, to, fps) if you have the Video Prompt tools, or run", "run")
+    .replace("--from 12.0 --to 14.0", "--from 0.0 --to 2.0")
+    .replace("- **[00:07.0]** The recorded window was hidden\n", "");
+  assert.equal(renderTimeline(m, "/R", "/Apps/vp-frames"), golden);
+});
+
+test("timeline leaves out click wording where clicks can't be logged", () => {
+  const m: M = {
+    id: "x", duration: 5, mode: "area", transcript: [], transcription: "noAudio",
+    video: { file: "video.mp4", width: 100, height: 100, fps: 10, hasAudio: false },
+    overview: "overview.jpg", overviewSecondsPerTile: 1, strokes: [], clicks: [], clicksLogged: false, timeline: [],
+  };
+  const text = renderTimeline(m, "/R", "/vp-frames");
+  assert.doesNotMatch(text, /click/i);
+  assert.match(text, /microphone was off/);
+});
+
+test("the example command stays inside a short recording", () => {
+  const m: M = {
+    id: "x", duration: 1.5, mode: "area", transcript: [], transcription: "noSpeech",
+    video: { file: "video.mp4", width: 100, height: 100, fps: 10, hasAudio: false },
+    overview: "overview.jpg", overviewSecondsPerTile: 1, strokes: [], clicks: [], clicksLogged: false, timeline: [],
+  };
+  assert.match(renderTimeline(m, "/R", "/vp-frames"), /--from 0\.0 --to 1\.5/);
+});
+
+test("stroke descriptions cover each case", () => {
+  assert.equal(describeStroke(circle, "pen").text, "circled the area (47,514)–(223,594)");
+  assert.equal(describeStroke([[0, 0], [50, 50]], "arrow").text, "drew an arrow from (0,0) to (50,50)");
+  assert.equal(describeStroke([[0, 0], [50, 50]], "box").text, "boxed the area (0,0)–(50,50)");
+  assert.equal(describeStroke([[0, 10], [100, 12]], "pen").text, "underlined/marked horizontally from (0,10) to (100,12)");
+  assert.equal(describeStroke([[0, 0], [50, 90]], "pen").text, "drew a line from (0,0) to (50,90)");
+  const hook = [[0, 0], [40, 0], [80, 0], [100, 30], [100, 60], [100, 90], [70, 100], [40, 100], [20, 100], [20, 60]];
+  assert.match(describeStroke(hook, "pen").text, /curved mark|circled/);
+});
+
+test("sentences, titles, stamps and coordinates", () => {
+  const words = [" So,", " the", " page.", " See", " this?"].map((text, i) => ({ start: i, end: i + 0.5, text }));
+  assert.deepEqual(sentences(words).map((s) => [s.start, s.end, s.text]), [[0, 2.5, "So, the page."], [3, 4.5, "See this?"]]);
+  assert.equal(titleFor([{ start: 0, end: 1, text: "Fix the button." }], new Date()), "Fix the button");
+  assert.equal(titleFor([], new Date(2026, 0, 1, 9, 5)), "Recording 09:05");
+  assert.ok(titleFor([{ start: 0, end: 1, text: "word ".repeat(30) }], new Date()).endsWith("…"));
+  assert.equal(stamp(64.25), "01:04.3");
+  assert.deepEqual(toFramePixels({ x: 150, y: 100 }, { x: 100, y: 50, w: 100, h: 100 }, 200, 200), [100, 100]);
+  assert.equal(toFramePixels({ x: 99, y: 100 }, { x: 100, y: 50, w: 100, h: 100 }, 200, 200), null);
+  assert.deepEqual([...segmentOffsets(new Map([[3, 2], [1, 5]]))], [[1, 0], [3, 5]]);
+});
+
+test("whisper output drops bracketed non-speech", () => {
+  const json = JSON.stringify({ transcription: [
+    { offsets: { from: 0, to: 500 }, text: " Hello." },
+    { offsets: { from: 500, to: 900 }, text: " [BLANK_AUDIO]" },
+  ] });
+  assert.deepEqual(parseWhisper(json), [{ start: 0, end: 0.5, text: " Hello." }]);
+});
+
+test("a region from the system dialog is kept whole, and its marks don't claim coordinates", async () => {
+  const paths = makePaths(mkdtempSync(join(tmpdir(), "vp test ")));
+  const id = "20261104-130000";
+  const raw = join(paths.recordings, id, "raw");
+  mkdirSync(raw, { recursive: true });
+  execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "testsrc2=s=488x318:r=10:d=1", "-c:v", "libvpx", "-b:v", "1M", join(raw, "seg_001.webm")]);
+  writeFileSync(join(raw, "session.json"), JSON.stringify({
+    mode: "area", display: { x: 0, y: 0, w: 1920, h: 1200 }, area: { x: 0, y: 0, w: 1920, h: 1200 }, regionFromDialog: true, createdAt: new Date().toISOString(),
+  }));
+  writeFileSync(join(raw, "events.jsonl"), JSON.stringify({ type: "stroke", seg: 1, t0: 0.1, t1: 0.5, points: [{ x: 900, y: 700 }, { x: 950, y: 720 }], tool: "pen" }) + "\n");
+  await processRecording(id, paths, "/vp-frames");
+  const m = readJSON<Manifest>(join(paths.recordings, id, "manifest.json"));
+  assert.deepEqual([m.video.width, m.video.height], [488, 318]);
+  assert.equal(m.strokes.length, 1);
+  assert.match(readFileSync(join(paths.recordings, id, "timeline.md"), "utf8"), /drew a mark \(its position isn't known/);
+});
+
+test("a region is located from the overlay's stripes, and bad readings are rejected", () => {
+  const W = 1920, H = 1200;
+  const steps = patternSteps(W, H);
+  assert.equal(steps.length, 22);
+  // Capture's changes to brightness and tint, within what the frames must survive.
+  const captured = (v: number, n: number): RGB => [v + (n % 7) - 3, v - (n % 5) + 2, v + (n % 3) - 1];
+  const samplesFor = (rx: number, ry: number, rw: number, rh: number) => steps.map((step, i) => {
+    const at = (x: number, y: number) => captured(stepLevel(step, step.axis === "x" ? x : y), i);
+    return { width: rw, height: rh, first: at(rx + SAMPLE_INSET, ry + SAMPLE_INSET), last: at(rx + rw - 1 - SAMPLE_INSET, ry + rh - 1 - SAMPLE_INSET) };
+  });
+  const regions = [[0, 0, 488, 318], [701, 433, 488, 318], [1432, 882, 488, 318], [63, 64, 200, 100], [240, 489, 642, 524], [1278, 676, 642, 524], [337, 650, 650, 392]];
+  for (const [rx, ry, rw, rh] of regions) {
+    const samples = samplesFor(rx, ry, rw, rh);
+    samples.forEach((sample, i) => assert.ok(showsStep(sample, steps[i]), `step ${i} unread at ${rx},${ry}`));
+    assert.deepEqual(locate(steps, samples, W, H), { x: rx, y: ry });
+  }
+  // Each frame is told apart from the one before, so a late frame is never read as the next.
+  const samples = samplesFor(701, 433, 488, 318);
+  for (let i = 1; i < steps.length; i++) assert.equal(showsStep(samples[i - 1], steps[i]), false, `step ${i} accepted a stale frame`);
+  // Real screen content from a failed reading isn't a frame of stripes.
+  const screen = { width: 472, height: 398, first: [34, 39, 37] as RGB, last: [34, 39, 37] as RGB };
+  assert.equal(showsStep(screen, steps[0]), false);
+  // One wrong bit is caught, because the two test pixels no longer match the capture's size.
+  const wrong = samplesFor(701, 433, 488, 318);
+  const yStep = steps.findIndex((s) => s.axis === "y" && s.bit === 6);
+  wrong[yStep] = { ...wrong[yStep], first: wrong[yStep].last, last: wrong[yStep].first };
+  assert.equal(locate(steps, wrong, W, H), null);
+});
+
+test("marks in a located region get real video coordinates", async () => {
+  const paths = makePaths(mkdtempSync(join(tmpdir(), "vp test ")));
+  const id = "20261104-140000";
+  const raw = join(paths.recordings, id, "raw");
+  mkdirSync(raw, { recursive: true });
+  execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "testsrc2=s=488x318:r=10:d=1", "-c:v", "libvpx", "-b:v", "1M", join(raw, "seg_001.webm")]);
+  writeFileSync(join(raw, "session.json"), JSON.stringify({
+    mode: "area", display: { x: 0, y: 0, w: 1920, h: 1200 }, area: { x: 700, y: 400, w: 488, h: 318 }, regionFromDialog: true, regionLocated: true, createdAt: new Date().toISOString(),
+  }));
+  const stroke = (x: number) => JSON.stringify({ type: "stroke", seg: 1, t0: 0.1, t1: 0.5, points: [{ x, y: 410 }, { x: x + 100, y: 412 }], tool: "pen" });
+  writeFileSync(join(raw, "events.jsonl"), [stroke(710), stroke(10)].join("\n") + "\n");
+  await processRecording(id, paths, "/vp-frames");
+  const m = readJSON<Manifest>(join(paths.recordings, id, "manifest.json"));
+  assert.deepEqual([m.video.width, m.video.height], [488, 318]);
+  assert.equal(m.strokes.length, 1, "a mark outside the region isn't in the video");
+  assert.deepEqual(m.strokes[0].bbox, [10, 10, 110, 12]);
+});
+
+test("processing joins paused segments, crops to the area and maps marks to video pixels", async () => {
+  const root = mkdtempSync(join(tmpdir(), "vp test "));
+  const paths = makePaths(root);
+  const id = "20261104-120000";
+  const raw = join(paths.recordings, id, "raw");
+  mkdirSync(raw, { recursive: true });
+  for (const [n, d] of [[1, 2], [2, 1]]) {
+    execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", `testsrc2=s=1920x1200:r=10:d=${d}`,
+      "-f", "lavfi", "-i", `sine=frequency=440:duration=${d}`, "-c:v", "libvpx", "-b:v", "1M", "-c:a", "libopus", join(raw, `seg_00${n}.webm`)]);
+  }
+  writeFileSync(join(raw, "session.json"), JSON.stringify({
+    mode: "area", display: { x: 0, y: 0, w: 1920, h: 1200 }, area: { x: 100, y: 100, w: 800, h: 600 }, createdAt: new Date().toISOString(),
+  }));
+  const events = [
+    { type: "stroke", seg: 1, t0: 0.5, t1: 0.9, points: [{ x: 100, y: 100 }, { x: 900, y: 110 }], tool: "pen" },
+    { type: "stroke", seg: 2, t0: 0.1, t1: 0.2, points: [{ x: 500, y: 400 }, { x: 600, y: 500 }], tool: "arrow" },
+    { type: "undo", seg: 2, t: 0.5 },
+    { type: "clear", seg: 2, t: 0.6 },
+  ];
+  writeFileSync(join(raw, "events.jsonl"), events.map((e) => JSON.stringify(e)).join("\n") + "\n");
+
+  const meta = await processRecording(id, paths, "/vp-frames");
+  assert.equal(meta.status, "reviewing");
+  const dir = join(paths.recordings, id);
+  const m = readJSON<Manifest>(join(dir, "manifest.json"));
+  assert.deepEqual([m.video.width, m.video.height], [800, 600]);
+  assert.ok(Math.abs(m.duration - 3.2) < 0.4, `duration ${m.duration}`);
+  assert.equal(m.strokes.length, 1, "undo removes the arrow");
+  assert.deepEqual(m.strokes[0].bbox, [0, 0, 800, 10]);
+  const pause = m.timeline.find((i) => i.kind === "pause")!;
+  assert.ok(pause.time > 1.8 && pause.time < 2.4, `pause at ${pause.time}`);
+  const frames = Number(execFileSync("ffprobe", ["-v", "error", "-count_packets", "-select_streams", "v:0", "-show_entries", "stream=nb_read_packets", "-of", "csv=p=0", join(dir, "video.mp4")]).toString().replace(/\D/g, ""));
+  assert.ok(Math.abs(frames / m.duration - 10) < 1, `${frames} frames in ${m.duration}s`);
+  assert.equal(readJSON<RecordingMeta>(join(dir, "meta.json")).status, "reviewing");
+
+  const timeline = finalize(id, { transcriptText: "Edited words.", note: "A note" }, paths, "/vp-frames");
+  const text = readFileSync(timeline, "utf8");
+  assert.match(text, /Edited words\./);
+  assert.match(text, /## Typed note\n\nA note/);
+  assert.equal(readJSON<RecordingMeta>(join(dir, "meta.json")).status, "ready");
+
+  const script = join(repo, "desktop/bin/vp-frames");
+  const out = execFileSync(script, [join(dir, "video.mp4"), "--from", "0.5", "--to", "1", "--fps", "2"]).toString().trim().split("\n");
+  assert.deepEqual(out.map((p) => p.replace(/.*\//, "")), ["001_t00000.50s.jpg", "002_t00001.00s.jpg"]);
+  assert.match(execFileSync("ffprobe", ["-v", "error", "-show_entries", "stream=width", "-of", "csv=p=0", out[0]]).toString(), /800/);
+});

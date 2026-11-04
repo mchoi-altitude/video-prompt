@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'" />
+    <title>Recordings</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { margin: 0; padding: 16px; font: 14px system-ui; background: Canvas; color: CanvasText; }
+      button { padding: 6px 12px; }
+      .row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid color-mix(in srgb, CanvasText 15%, transparent); }
+      .text { flex: 1; min-width: 0; }
+      .text div:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .sub { font-size: 12px; opacity: 0.7; }
+    </style>
+  </head>
+  <body>
+    <div id="list"></div>
+    <script src="recordings.js"></script>
+  </body>
+</html>

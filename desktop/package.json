@@ -1,0 +1,17 @@
+{
+  "name": "video-prompt-desktop",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Video Prompt for Fedora and Windows",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build": "tsc && cp src/ui/*.html dist/ui/",
+    "test": "tsc && node --test dist/test/",
+    "start": "npm run build && electron . --ozone-platform=x11"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "electron": "45.2.2",
+    "typescript": "7.0.2"
+  }
+}

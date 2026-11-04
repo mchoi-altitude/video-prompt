@@ -53,6 +53,31 @@ test("the timeline matches the Mac's golden file, apart from the design's §7 di
   assert.equal(renderTimeline(m, "/R", "/Apps/vp-frames"), golden);
 });
 
+test("on Windows the timeline gives vp-frames for PowerShell, Git Bash and WSL", () => {
+  const m: M = {
+    id: "x", duration: 5, mode: "area", transcript: [], transcription: "noAudio",
+    video: { file: "video.mp4", width: 100, height: 100, fps: 10, hasAudio: false },
+    overview: "overview.jpg", overviewSecondsPerTile: 1, strokes: [], clicks: [], clicksLogged: false, timeline: [],
+  };
+  const dir = "C:\\Users\\A B\\AppData\\Local\\VideoPrompt\\recordings\\x";
+  const text = renderTimeline(m, dir, "C:\\Users\\A B\\AppData\\Local\\Programs\\Video Prompt\\resources\\app\\bin\\vp-frames.cmd");
+  const section = text.slice(text.indexOf("## The recording"), text.indexOf("## Timeline"));
+  assert.equal(section, [
+    "## The recording",
+    "",
+    "- **Video:** `C:\\Users\\A B\\AppData\\Local\\VideoPrompt\\recordings\\x\\video.mp4` (100×100, 10 fps). It shows only the selected area.",
+    "- **Overview:** `C:\\Users\\A B\\AppData\\Local\\VideoPrompt\\recordings\\x\\overview.jpg` (in WSL: `/mnt/c/Users/A B/AppData/Local/VideoPrompt/recordings/x/overview.jpg`): one thumbnail per second. Look at it first.",
+    "- **Look closer at any moment:** run",
+    "  the command for your shell, and view the JPEGs it prints with your Read tool.",
+    "  - PowerShell: `& \"C:\\Users\\A B\\AppData\\Local\\Programs\\Video Prompt\\resources\\app\\bin\\vp-frames.cmd\" \"C:\\Users\\A B\\AppData\\Local\\VideoPrompt\\recordings\\x\\video.mp4\" --from 0.0 --to 2.0 --fps 5`",
+    "  - Git Bash: `\"C:/Users/A B/AppData/Local/Programs/Video Prompt/resources/app/bin/vp-frames.sh\" \"C:/Users/A B/AppData/Local/VideoPrompt/recordings/x/video.mp4\" --from 0.0 --to 2.0 --fps 5`",
+    "  - WSL: `\"/mnt/c/Users/A B/AppData/Local/Programs/Video Prompt/resources/app/bin/vp-frames.sh\" \"/mnt/c/Users/A B/AppData/Local/VideoPrompt/recordings/x/video.mp4\" --from 0.0 --to 2.0 --fps 5`",
+    "  Check the moments the narration and drawings point to; brief states may last under a second.",
+    "",
+    "",
+  ].join("\n"));
+});
+
 test("timeline leaves out click wording where clicks can't be logged", () => {
   const m: M = {
     id: "x", duration: 5, mode: "area", transcript: [], transcription: "noAudio",
@@ -278,4 +303,10 @@ test("processing joins paused segments, crops to the area and maps marks to vide
   const out = runVpFrames([join(dir, "video.mp4"), "--from", "0.5", "--to", "1", "--fps", "2"]).toString().trim().split(/\r?\n/);
   assert.deepEqual(out.map((p) => p.replace(/.*[\\/]/, "")), ["001_t00000.50s.jpg", "002_t00001.00s.jpg"]);
   assert.match(execFileSync(ffprobe, ["-v", "error", "-show_entries", "stream=width", "-of", "csv=p=0", out[0]]).toString(), /800/);
+
+  // Windows: Git Bash runs vp-frames.sh instead, since cmd splits the .cmd's path at spaces there.
+  if (process.platform === "win32") {
+    const sh = execFileSync("bash", [join(repo, "desktop", "bin", "vp-frames.sh"), join(dir, "video.mp4"), "--from", "0.5", "--to", "1", "--fps", "2"]);
+    assert.deepEqual(sh.toString().trim().split(/\r?\n/).map((p) => p.replace(/.*[\\/]/, "")), ["001_t00000.50s.jpg", "002_t00001.00s.jpg"]);
+  }
 });

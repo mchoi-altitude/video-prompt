@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import type { Manifest, Point, RawEvent, RawSession, Rect, RecordingMeta, StrokeTool } from "../core/models";
 import { appBitmap, trayBitmap } from "./icon";
 import { locate, patternSteps, SAMPLE_INSET, type Sample } from "../core/locate";
-import { expiredRecordings, type Retention } from "../core/timeline";
+import { expiredRecordings, toWslPath, type Retention } from "../core/timeline";
 import { barTakesFocus, captureMode, dataRoot, hidesBarFromCapture, keepsDefaultMenu, restrictsDataFolder, vpFramesPath, windowType } from "../core/platform";
 import { finalize, makePaths, processRecording, recoverInterrupted, readJSON, writeJSON } from "../process/processor";
 
@@ -16,6 +16,8 @@ const root = dataRoot(platform, process.env, homedir());
 const paths = makePaths(root);
 const vpFrames = vpFramesPath(platform, join(__dirname, "../.."));
 const settingsFile = join(root, "settings.json");
+/** Windows offers the reference in WSL's form too, for Claude Code running there. */
+const hasWsl = platform === "win32";
 
 type RecordMode = "screen" | "area";
 /** `lastMode`: Windows only, like the Mac's. The shortcut starts it, and the menu checks it. */
@@ -505,6 +507,7 @@ function reviewData(id: string) {
     transcript: m.transcript.map((s) => s.text).join(" "),
     transcription: m.transcription,
     note: m.note ?? "",
+    wsl: hasWsl,
   };
 }
 
@@ -512,14 +515,17 @@ function openReview(id: string) {
   const win = new BrowserWindow({ width: 720, height: 720, title: "Review recording", icon: windowIcon(), autoHideMenuBar: true, webPreferences });
   win.loadFile(ui("review"));
   let decided = false;
-  const decide = (channel: string, edits?: { transcriptText: string; note: string }) => {
+  const decide = (channel: string, edits?: { transcriptText: string; note: string }, wsl = false) => {
     decided = true;
-    if (channel === "review-copy") clipboard.writeText(finalize(id, edits!, paths, vpFrames));
+    if (channel === "review-copy") {
+      const timeline = finalize(id, edits!, paths, vpFrames);
+      clipboard.writeText(wsl ? toWslPath(timeline) : timeline);
+    }
     win.destroy();
     recordingsWindow?.webContents.send("recordings-changed");
   };
-  const copy = (e: Electron.IpcMainEvent, edits: { transcriptText: string; note: string }) => {
-    if (e.sender === win.webContents) decide("review-copy", edits);
+  const copy = (e: Electron.IpcMainEvent, edits: { transcriptText: string; note: string }, wsl?: boolean) => {
+    if (e.sender === win.webContents) decide("review-copy", edits, wsl === true && hasWsl);
   };
   const discard = async (e: Electron.IpcMainEvent) => {
     if (e.sender !== win.webContents) return;

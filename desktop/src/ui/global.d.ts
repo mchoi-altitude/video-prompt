@@ -1,7 +1,7 @@
 type Tool = "pen" | "arrow" | "box";
 type Meta = { id: string; title: string; createdAt: string; duration: number; status: string; sizeBytes: number; overview: string /* file:// URL */; error?: string };
 type Prefs = { retention: { days: number } | { keepLast: number } | "never"; drawingsFade: boolean };
-type ReviewData = { id: string; video: string /* file:// URL */; duration: number; transcript: string; transcription: string; note: string };
+type ReviewData = { id: string; video: string /* file:// URL */; duration: number; transcript: string; transcription: string; note: string; wsl: boolean };
 
 declare const vp: {
   trayMenuInfo(): Promise<{ busy: boolean; canStop: boolean; count: number; twoModes: boolean; lastMode: "screen" | "area" }>;
@@ -36,7 +36,7 @@ declare const vp: {
 
   onReviewReady(fn: (d: ReviewData) => void): void;
   onReviewFailed(fn: (error: string) => void): void;
-  reviewCopy(edits: { transcriptText: string; note: string }): void;
+  reviewCopy(edits: { transcriptText: string; note: string }, wsl?: boolean): void;
   reviewDiscard(): void;
 
   recordingsList(): Promise<Meta[]>;

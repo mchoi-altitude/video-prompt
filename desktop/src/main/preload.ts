@@ -35,7 +35,7 @@ contextBridge.exposeInMainWorld("vp", {
 
   onReviewReady: on("review-ready"),
   onReviewFailed: on("review-failed"),
-  reviewCopy: (edits: object) => ipcRenderer.send("review-copy", edits),
+  reviewCopy: (edits: object, wsl = false) => ipcRenderer.send("review-copy", edits, wsl),
   reviewDiscard: () => ipcRenderer.send("review-discard"),
 
   recordingsList: () => ipcRenderer.invoke("recordings-list"),

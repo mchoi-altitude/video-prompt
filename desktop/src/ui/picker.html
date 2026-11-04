@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'" />
+    <title>Choose an area</title>
+    <style>
+      /* Same look as Sources/VideoPrompt/AreaPicker.swift: dimmed screen, dashed white box. */
+      html, body { margin: 0; height: 100%; overflow: hidden; user-select: none; cursor: crosshair; }
+      body { background: rgba(0, 0, 0, 0.35); }
+      body.dragging { background: transparent; }
+      #box { display: none; position: fixed; box-sizing: border-box; border: 2px dashed #fff; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.35); }
+      #hint { position: fixed; top: 64px; left: 0; right: 0; text-align: center; font: 500 16px system-ui; color: #fff; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6); pointer-events: none; }
+    </style>
+  </head>
+  <body>
+    <div id="box"></div>
+    <div id="hint">Drag to choose an area · Esc cancels</div>
+    <script src="picker.js"></script>
+  </body>
+</html>

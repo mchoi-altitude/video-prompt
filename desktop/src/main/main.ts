@@ -8,7 +8,7 @@ import type { Manifest, Point, RawEvent, RawSession, Rect, RecordingMeta, Stroke
 import { appBitmap, trayBitmap } from "./icon";
 import { locate, patternSteps, SAMPLE_INSET, type Sample } from "../core/locate";
 import { expiredRecordings, type Retention } from "../core/timeline";
-import { barTakesFocus, dataRoot, hidesBarFromCapture, keepsDefaultMenu, restrictsDataFolder, vpFramesPath, windowType } from "../core/platform";
+import { barTakesFocus, captureMode, dataRoot, hidesBarFromCapture, keepsDefaultMenu, restrictsDataFolder, vpFramesPath, windowType } from "../core/platform";
 import { finalize, makePaths, processRecording, recoverInterrupted, readJSON, writeJSON } from "../process/processor";
 
 const platform = process.platform;
@@ -17,7 +17,9 @@ const paths = makePaths(root);
 const vpFrames = vpFramesPath(platform, join(__dirname, "../.."));
 const settingsFile = join(root, "settings.json");
 
-type Settings = { retention: Retention; drawingsFade: boolean };
+type RecordMode = "screen" | "area";
+/** `lastMode`: Windows only, like the Mac's. The shortcut starts it, and the menu checks it. */
+type Settings = { retention: Retention; drawingsFade: boolean; lastMode?: RecordMode };
 const defaults: Settings = { retention: { days: 3 }, drawingsFade: true };
 
 function loadSettings(): Settings {
@@ -71,12 +73,23 @@ function windowIcon() {
   return nativeImage.createFromBitmap(appBitmap(pixels), { width: pixels, height: pixels });
 }
 
+/** Windows has two ways to record, like the Mac. Fedora's one Record… opens the system's dialog. */
+const twoModes = captureMode(platform) === "picker";
+const lastMode = (): RecordMode => settings.lastMode ?? "area";
+
 function refreshTray() {
   const busy = state !== "idle";
+  const shortcut = (m: RecordMode) => (lastMode() === m ? { accelerator: "Ctrl+Alt+Shift+R" } : {});
+  const recordItems: Electron.MenuItemConstructorOptions[] = twoModes
+    ? [
+        { label: "Record whole screen", type: "checkbox", checked: lastMode() === "screen", enabled: !busy, ...shortcut("screen"), click: () => void startFlow("screen") },
+        { label: "Record selected area…", type: "checkbox", checked: lastMode() === "area", enabled: !busy, ...shortcut("area"), click: () => void startFlow("area") },
+      ]
+    : [{ label: "Record…", enabled: !busy, accelerator: "Ctrl+Alt+Shift+R", click: () => void startFlow() }];
   tray?.setContextMenu(
     Menu.buildFromTemplate([
       ...(state === "recording" || state === "paused" ? [{ label: "Stop recording", click: () => void stopRecording() }] : []),
-      { label: "Record…", enabled: !busy, accelerator: "Ctrl+Alt+Shift+R", click: () => void startFlow() },
+      ...recordItems,
       { type: "separator" },
       { label: "Recordings…", click: openRecordings },
       { label: "Settings…", click: openSettings },
@@ -99,10 +112,11 @@ function closeTrayMenu() {
 function toggleTrayMenu() {
   if (trayMenu) return closeTrayMenu();
   const { bounds, workArea } = screen.getPrimaryDisplay();
-  const width = 280;
+  // Wider with two record modes: "✓ Record selected area…" and its shortcut need the room.
+  const width = twoModes ? 340 : 280;
   const canStop = state === "recording" || state === "paused";
-  // Four rows, or five with Stop, plus the divider, padding and border.
-  const height = (canStop ? 5 : 4) * 24 + 9 + 12;
+  // Four rows (five with two record modes), one more with Stop, plus the divider, padding and border.
+  const height = ((canStop ? 5 : 4) + (twoModes ? 1 : 0)) * 24 + 9 + 12;
   const panelOnTop = workArea.y > bounds.y;
   trayMenu = new BrowserWindow({
     x: workArea.x + workArea.width - width - 8,
@@ -126,27 +140,49 @@ ipcMain.handle("tray-menu-info", () => ({
   busy: state !== "idle",
   canStop: state === "recording" || state === "paused",
   count: listRecordings().filter((m) => m.status !== "processing").length,
+  twoModes,
+  lastMode: lastMode(),
 }));
 ipcMain.on("tray-menu-close", closeTrayMenu);
 ipcMain.on("tray-menu-action", (_e, action: string) => {
   closeTrayMenu();
   if (action === "stop") void stopRecording();
   else if (action === "record") void startFlow();
+  else if (action === "record-screen") void startFlow("screen");
+  else if (action === "record-area") void startFlow("area");
   else if (action === "recordings") openRecordings();
   else if (action === "settings") openSettings();
   else if (action === "quit") app.quit();
 });
 
-// ---- Starting: the system's dialog chooses what's recorded (a screen or a region), then countdown
+// ---- Starting. Fedora: the system's dialog chooses what's recorded (a screen or a region).
+// Windows: the whole screen under the pointer, or an area from the picker. Then countdown.
 
-async function startFlow() {
+/** The display the capture should show, on Windows. Fedora's dialog decides there. */
+let captureDisplayId: string | undefined;
+
+async function startFlow(mode?: RecordMode) {
   if (state !== "idle") return;
   setState("selecting");
   try {
+    let chosen: { area: Rect; display: Display } | null = null;
+    if (twoModes) {
+      const m = mode ?? lastMode();
+      if (m === "area") chosen = await pickArea();
+      else {
+        const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+        chosen = { area: rect(display.bounds), display };
+      }
+      if (!chosen) return setState("idle");
+      settings = { ...settings, lastMode: m };
+      writeJSON(settingsFile, settings);
+      captureDisplayId = String(chosen.display.id);
+    }
     recorder ??= createRecorder();
     await recorderReady;
     // A user gesture is required for getDisplayMedia; this hidden window can't have one otherwise.
     const got: { width: number; height: number } = await recorder.webContents.executeJavaScript("startCapture()", true);
+    if (chosen) return await beginRecording(chosen.display, null, chosen.area);
     const screenChosen = screen.getAllDisplays().find((d) => Math.round(d.size.width * d.scaleFactor) === got.width && Math.round(d.size.height * d.scaleFactor) === got.height);
     await beginRecording(screenChosen ?? screen.getDisplayNearestPoint(screen.getCursorScreenPoint()), screenChosen ? null : got);
   } catch (e) {
@@ -154,6 +190,47 @@ async function startFlow() {
     setState("idle"); // Cancelling the system dialog lands here too.
   }
 }
+
+// The area picker: one window per display. Dragging on any of them chooses the area; Esc cancels.
+let pickers: { win: BrowserWindow; display: Display }[] = [];
+let picked: ((r: { area: Rect; display: Display } | null) => void) | undefined;
+
+function pickArea(): Promise<{ area: Rect; display: Display } | null> {
+  return new Promise((resolve) => {
+    picked = resolve;
+    for (const display of screen.getAllDisplays()) {
+      const win = new BrowserWindow({ ...display.bounds, frame: false, transparent: true, hasShadow: false, resizable: false, movable: false, skipTaskbar: true, alwaysOnTop: true, show: false, webPreferences });
+      win.setAlwaysOnTop(true, "screen-saver");
+      win.setContentProtection(true);
+      win.loadFile(ui("picker"));
+      win.once("ready-to-show", () => {
+        win.show();
+        // A window gets its full size only once it's shown.
+        win.setBounds(display.bounds);
+        win.focus();
+      });
+      pickers.push({ win, display });
+    }
+    // Registered too, since Windows doesn't always give a new window keyboard focus.
+    globalShortcut.register("Escape", () => finishPick(null));
+  });
+}
+
+function finishPick(result: { area: Rect; display: Display } | null) {
+  globalShortcut.unregister("Escape");
+  for (const p of pickers) p.win.destroy();
+  pickers = [];
+  const done = picked;
+  picked = undefined;
+  done?.(result);
+}
+
+ipcMain.on("picker-done", (e, r: Rect | null) => {
+  const p = pickers.find((x) => x.win.webContents === e.sender);
+  if (!p) return;
+  const b = p.display.bounds;
+  finishPick(r ? { area: { x: b.x + r.x, y: b.y + r.y, w: r.w, h: r.h }, display: p.display } : null);
+});
 
 // The bar is wider while the drawing tools show, like the Mac's. Its window includes the hint line.
 const BAR_WIDTH = 330;
@@ -228,8 +305,9 @@ async function locateRegion(display: Display, got: { width: number; height: numb
   }
 }
 
-/** `region` is the capture's size when the dialog gave a region rather than a whole screen. */
-async function beginRecording(display: Display, region: { width: number; height: number } | null) {
+/** `region` is the capture's size when the dialog gave a region rather than a whole screen. `known` is
+ * the area when the app chose it (Windows), so nothing needs measuring. */
+async function beginRecording(display: Display, region: { width: number; height: number } | null, known?: Rect) {
   overlay = new BrowserWindow({ ...display.bounds, ...windowType(platform), transparent: true, frame: false, hasShadow: false, resizable: false, skipTaskbar: true, focusable: false, alwaysOnTop: true, show: false, webPreferences });
   overlay.setAlwaysOnTop(true, "screen-saver");
   overlay.setVisibleOnAllWorkspaces(true);
@@ -247,6 +325,7 @@ async function beginRecording(display: Display, region: { width: number; height:
   overlay.webContents.send("countdown");
   const located = region ? await locateRegion(display, region) : null;
   if (located) overlay.webContents.send("region", located);
+  else if (known && (known.w < display.bounds.width || known.h < display.bounds.height)) overlay.webContents.send("region", known);
 
   recordingId = newRecordingId();
   rawDir = join(paths.recordings, recordingId, "raw");
@@ -254,7 +333,7 @@ async function beginRecording(display: Display, region: { width: number; height:
   const raw: RawSession = {
     mode: "area",
     display: rect(display.bounds),
-    area: located ?? rect(display.bounds),
+    area: known ?? located ?? rect(display.bounds),
     regionFromDialog: region !== null,
     regionLocated: located !== null,
     createdAt: new Date().toISOString(),
@@ -264,7 +343,7 @@ async function beginRecording(display: Display, region: { width: number; height:
   segment = 0;
   elapsedBefore = 0;
 
-  bar = new BrowserWindow({ ...placeBar(display, located), ...windowType(platform), transparent: true, hasShadow: false, frame: false, resizable: false, skipTaskbar: true, focusable: barTakesFocus(platform), alwaysOnTop: true, show: false, webPreferences });
+  bar = new BrowserWindow({ ...placeBar(display, known ?? located), ...windowType(platform), transparent: true, hasShadow: false, frame: false, resizable: false, skipTaskbar: true, focusable: barTakesFocus(platform), alwaysOnTop: true, show: false, webPreferences });
   bar.setAlwaysOnTop(true, "screen-saver");
   // Like the Mac: the bar stays out of the video. Fedora can't do this, so it places the bar outside the region.
   if (hidesBarFromCapture(platform)) bar.setContentProtection(true);
@@ -524,7 +603,8 @@ function openSettings() {
 
 ipcMain.handle("settings-get", () => settings);
 ipcMain.handle("settings-set", (_e, next: Settings) => {
-  settings = next;
+  // The record mode is the main process's to change; a settings window can hold an old copy.
+  settings = { ...next, lastMode: settings.lastMode };
   writeJSON(settingsFile, settings);
   void sweep().then(() => recordingsWindow?.webContents.send("recordings-changed"));
 });
@@ -562,7 +642,9 @@ app.whenReady().then(() => {
   session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
     // On Wayland this call is what opens the system's screen-share dialog.
     const sources = await desktopCapturer.getSources({ types: ["screen"] });
-    if (sources[0]) callback({ video: sources[0] });
+    // On Windows, the display the user chose. Fedora has no captureDisplayId, so it keeps sources[0].
+    const source = (captureDisplayId && sources.find((s) => s.display_id === captureDisplayId)) || sources[0];
+    if (source) callback({ video: source });
     else callback({});
   });
   tray = new Tray(trayIcon());

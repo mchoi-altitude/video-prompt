@@ -4,9 +4,11 @@ type Prefs = { retention: { days: number } | { keepLast: number } | "never"; dra
 type ReviewData = { id: string; video: string /* file:// URL */; duration: number; transcript: string; transcription: string; note: string };
 
 declare const vp: {
-  trayMenuInfo(): Promise<{ busy: boolean; canStop: boolean; count: number }>;
+  trayMenuInfo(): Promise<{ busy: boolean; canStop: boolean; count: number; twoModes: boolean; lastMode: "screen" | "area" }>;
   trayMenuAction(action: string): void;
   trayMenuClose(): void;
+
+  pickerDone(area: { x: number; y: number; w: number; h: number } | null): void;
 
   countdownDone(): void;
   onInit(fn: (o: { origin: { x: number; y: number }; fades: boolean }) => void): void;

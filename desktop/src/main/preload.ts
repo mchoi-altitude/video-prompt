@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld("vp", {
   trayMenuAction: (action: string) => ipcRenderer.send("tray-menu-action", action),
   trayMenuClose: () => ipcRenderer.send("tray-menu-close"),
 
+  pickerDone: (area: object | null) => ipcRenderer.send("picker-done", area),
+
   countdownDone: () => ipcRenderer.send("countdown-done"),
   onInit: on("init"),
   onRegion: on("region"),

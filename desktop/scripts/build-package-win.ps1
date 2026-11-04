@@ -9,7 +9,7 @@ function Run($exe) {
   if ($LASTEXITCODE -ne 0) { throw "$exe failed: $args" }
 }
 
-Run npm run build
+Run npm.cmd run build
 
 # Portable: the default build is tuned to this machine's CPU and can crash on another.
 if (-not (Test-Path vendor\whisper.cpp)) {
@@ -23,7 +23,7 @@ $Stage = "out\video-prompt-windows-beta"
 if (Test-Path out) { Remove-Item out -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
 Copy-Item scripts\install.ps1, scripts\install.cmd $Stage
-Run npx electron --version
+Run npx.cmd electron --version
 Copy-Item node_modules\electron\dist "$Stage\video-prompt" -Recurse
 
 $AppDir = "$Stage\video-prompt\resources\app"

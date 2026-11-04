@@ -9,11 +9,13 @@
     "build": "tsc && node scripts/copy-ui.mjs",
     "test": "npm run build && electron --version && node --test \"dist/test/*.test.js\"",
     "start": "npm run build && node scripts/start.mjs",
-    "package": "scripts/build-package.sh"
+    "package": "scripts/build-package.sh",
+    "package:win": "node scripts/package-win.mjs"
   },
   "devDependencies": {
     "@types/node": "26.6.6",
     "electron": "45.2.2",
+    "electron-builder": "26.18.0",
     "typescript": "7.0.2"
   },
   "productName": "Video Prompt"

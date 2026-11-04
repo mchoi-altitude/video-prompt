@@ -1,0 +1,32 @@
+# Windows installer: `npm run package:win`. Fedora's package is scripts/build-package.sh instead.
+appId: ai.altitudeiq.videoprompt
+productName: Video Prompt
+# The app's own Electron, so the installer ships the version the tests ran on.
+electronDist: node_modules/electron/dist
+# Unpacked, so bin/ stays runnable: Claude runs vp-frames from there.
+asar: false
+directories:
+  output: out
+files:
+  - package.json
+  - dist/**
+  - "!dist/test/**"
+  - bin/vp-frames.cmd
+  - bin/vp-frames.sh
+  # ffmpeg, ffprobe, whisper-cli, their licenses and the speech model, from scripts/fetch-tools.mjs.
+  - vendor/bin/**
+  - vendor/models/**
+extraResources:
+  - from: ../LICENSE
+    to: LICENSE
+win:
+  target: nsis
+  icon: dist/icon-256.png
+nsis:
+  # Per user, no admin rights: installs to %LOCALAPPDATA%\Programs. Unsigned, so SmartScreen warns once.
+  oneClick: true
+  perMachine: false
+  artifactName: VideoPrompt-windows-beta-setup.exe
+  shortcutName: Video Prompt
+  # Recordings and settings stay in %LOCALAPPDATA%\VideoPrompt, like Linux's uninstall.
+  deleteAppDataOnUninstall: false

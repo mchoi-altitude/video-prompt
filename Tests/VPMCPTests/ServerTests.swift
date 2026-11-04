@@ -64,6 +64,40 @@ private func content(_ r: [String: Any]) -> [[String: Any]] {
     #expect((c.first?["text"] as? String)?.contains("wait_for_next_recording") == true)
 }
 
+@Test func latestInReviewSaysSoInsteadOfNothing() async throws {
+    let p = Paths(root: tempDir())
+    try makeProcessedRecording(p, id: "r1", status: .reviewing)
+    let c = content(try await call(server(p), toolCall("get_latest_recording")))
+    let text = c.first?["text"] as? String ?? ""
+    #expect(text.contains("review panel") && text.contains("r1"))
+    #expect(images(c) == 0)
+}
+
+@Test func latestInReviewDoesNotFallBackToAnOlderRecording() async throws {
+    let p = Paths(root: tempDir())
+    try addReady(p, id: "old", at: .now.addingTimeInterval(-60))
+    try makeProcessedRecording(p, id: "new", status: .reviewing)
+    let c = content(try await call(server(p), toolCall("get_latest_recording")))
+    let text = c.first?["text"] as? String ?? ""
+    #expect(text.contains("review panel") && text.contains("`old`"))
+    #expect(try Store(paths: p).meta("old").fetchedByCwd == nil)
+}
+
+@Test func getRecordingInReviewExplains() async throws {
+    let p = Paths(root: tempDir())
+    try makeProcessedRecording(p, id: "r1", status: .reviewing)
+    let r = try await call(server(p), toolCall("get_recording", #"{"id":"r1"}"#))
+    #expect((r["result"] as? [String: Any])?["isError"] as? Bool == true)
+    #expect((content(r).first?["text"] as? String)?.contains("Save or Send") == true)
+}
+
+@Test func getFramesOfRecordingInReviewExplains() async throws {
+    let p = Paths(root: tempDir())
+    try makeProcessedRecording(p, id: "r1", status: .reviewing)
+    let r = try await call(server(p), toolCall("get_frames", #"{"from":0,"to":1}"#))
+    #expect((content(r).first?["text"] as? String)?.contains("review panel") == true)
+}
+
 @Test func getUnknownRecordingIsError() async throws {
     let r = try await call(server(Paths(root: tempDir())), toolCall("get_recording", #"{"id":"nope"}"#))
     #expect((r["result"] as? [String: Any])?["isError"] as? Bool == true)

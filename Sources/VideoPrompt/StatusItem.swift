@@ -32,25 +32,11 @@ final class StatusItem: NSObject, NSMenuDelegate {
     }
 
     func setBadge(_ badge: MenuBadge) {
-        guard let symbol = NSImage(systemSymbolName: "record.circle", accessibilityDescription: "Video Prompt") else { return }
-        let size = NSSize(width: 18, height: 18)
-        let tint: NSColor? = switch badge {
-        case .none: nil
-        case .waiting: NSColor(srgbRed: 0xF0 / 255, green: 0xA0 / 255, blue: 0x20 / 255, alpha: 1)
-        case .recording: NSColor(srgbRed: 0xD0 / 255, green: 0x31 / 255, blue: 0x3A / 255, alpha: 1)
+        item.button?.image = switch badge {
+        case .none: MenuIcon.idle()
+        case .waiting: MenuIcon.waiting()
+        case .recording: MenuIcon.recording()
         }
-        guard let tint else { symbol.isTemplate = true; item.button?.image = symbol; return }
-        let image = NSImage(size: size, flipped: false) { rect in
-            symbol.draw(in: rect.insetBy(dx: 1, dy: 1))
-            if badge == .recording {
-                tint.setFill(); NSBezierPath(ovalIn: rect.insetBy(dx: 6, dy: 6)).fill()
-            } else {
-                tint.setFill(); NSBezierPath(ovalIn: NSRect(x: rect.maxX - 7, y: rect.maxY - 7, width: 7, height: 7)).fill()
-            }
-            return true
-        }
-        image.isTemplate = false
-        item.button?.image = image
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {

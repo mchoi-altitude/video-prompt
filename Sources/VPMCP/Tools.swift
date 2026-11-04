@@ -37,6 +37,18 @@ enum Tools {
         !id.isEmpty && !id.hasPrefix(".") && !id.contains("/") && !id.contains("\\")
     }
 
+    /// Why a recording can't be fetched yet. Only `ready` recordings are: the user saves or sends
+    /// from the review panel, where they can still fix the transcript or discard it.
+    static func notReady(_ m: RecordingMeta) -> String {
+        let name = "The recording “\(m.title)” (`\(m.id)`)"
+        switch m.status {
+        case .processing: return "\(name) is still being processed. Try again in a few seconds."
+        case .reviewing: return "\(name) is still open in Video Prompt's review panel. Ask the user to press Save or Send there, then try again."
+        case .processingFailed: return "\(name) failed to process. The user can retry it from Recordings in the Video Prompt menu."
+        case .ready: return "\(name) is ready."
+        }
+    }
+
     /// Claude's image cost is about width × height / 750 tokens.
     static func imageTokens(_ w: Int, _ h: Int, scale: Double) -> Double { Double(w) * scale * Double(h) * scale / 750 }
 
@@ -80,14 +92,23 @@ extension MCPServer {
     func callTool(_ name: String, _ args: JSONValue) async -> JSONValue {
         switch name {
         case "get_latest_recording":
-            guard let meta = store.latestReady() else {
+            // The newest recording, not the newest ready one: an older one would be the wrong recording.
+            guard let newest = store.list().first else {
                 return Tools.text("No recordings yet. Ask the user to record one (menu-bar icon or ⌃⌥⌘R), or call wait_for_next_recording.")
             }
-            return recording(meta.id)
-        case "get_recording":
-            guard let id = args["id"]?.string, Tools.isValidID(id), (try? store.meta(id))?.status == .ready else {
-                return Tools.text("No ready recording with that id. Call list_recordings to see what exists.", isError: true)
+            guard newest.status == .ready else {
+                var note = Tools.notReady(newest)
+                if let older = store.latestReady() {
+                    note += " The newest saved one is “\(older.title)” (`\(older.id)`); fetch it with get_recording only if the user wants that one."
+                }
+                return Tools.text(note)
             }
+            return recording(newest.id)
+        case "get_recording":
+            guard let id = args["id"]?.string, Tools.isValidID(id), let meta = try? store.meta(id) else {
+                return Tools.text("No recording with that id. Call list_recordings to see what exists.", isError: true)
+            }
+            guard meta.status == .ready else { return Tools.text(Tools.notReady(meta), isError: true) }
             return recording(id)
         case "list_recordings":
             let limit = Tools.clampedLimit(args["limit"]?.number ?? 10)
@@ -96,10 +117,12 @@ extension MCPServer {
             }
             return Tools.text(rows.isEmpty ? "No recordings yet." : rows.joined(separator: "\n"))
         case "get_frames":
-            let id = args["id"]?.string ?? store.latestReady()?.id
-            guard let id, Tools.isValidID(id), (try? store.meta(id))?.status == .ready, let m = try? store.manifest(id) else {
-                return Tools.text("No ready recording with that id. Call list_recordings to see what exists.", isError: true)
+            let id = args["id"]?.string ?? store.list().first?.id
+            guard let id, Tools.isValidID(id), let meta = try? store.meta(id) else {
+                return Tools.text("No recording with that id. Call list_recordings to see what exists.", isError: true)
             }
+            guard meta.status == .ready else { return Tools.text(Tools.notReady(meta), isError: true) }
+            guard let m = try? store.manifest(id) else { return Tools.text("Recording \(id) could not be read.", isError: true) }
             return await frames(id: id, manifest: m, from: Tools.clampedSeconds(args["from"]?.number ?? 0),
                                 to: Tools.clampedSeconds(args["to"]?.number ?? 0), fps: args["fps"]?.number ?? 2)
         case "wait_for_next_recording":

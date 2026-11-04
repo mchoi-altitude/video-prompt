@@ -34,34 +34,19 @@ Known issues and deferred fixes: [`docs/known-issues.md`](docs/known-issues.md).
 
 ### Linux (Fedora KDE)
 
-Tested on Fedora 44 with KDE Plasma 6.8 on Wayland, one monitor at 100% scale. There's no installer
-yet, so this runs from source. These steps haven't been tried on a fresh machine, so please report
-anything that's missing in this repo's Issues.
-
-You need Node.js LTS, ffmpeg and the build tools for whisper.cpp:
+Tested on Fedora 44 with KDE Plasma 6.8 on Wayland, one monitor at 100% scale. You need the GitHub CLI
+(`gh auth login`) and a CPU with AVX2, which most computers since about 2015 have. To install, or
+later to update, run:
 
 ```bash
-sudo dnf install -y nodejs npm ffmpeg-free openh264 gcc-c++ cmake make git
-
-git clone https://github.com/mchoi-altitude/video-prompt.git
-cd video-prompt/desktop
-npm ci
-
-# Speech-to-text, built into desktop/vendor (not committed)
-mkdir -p vendor/bin
-git clone --depth 1 --branch v1.9.5 https://github.com/ggml-org/whisper.cpp.git vendor/whisper.cpp
-cmake -S vendor/whisper.cpp -B vendor/whisper.cpp/build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
-cmake --build vendor/whisper.cpp/build --target whisper-cli -j
-cp vendor/whisper.cpp/build/bin/whisper-cli vendor/bin/
-
-# Speech model (148 MB, checksum-verified)
-mkdir -p ~/.local/share/VideoPrompt/models
-curl -fL -o ~/.local/share/VideoPrompt/models/ggml-base.en.bin \
-  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
-echo "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002  $HOME/.local/share/VideoPrompt/models/ggml-base.en.bin" | sha256sum -c -
-
-npm start
+cd "$(mktemp -d)" && gh release download linux-beta -R mchoi-altitude/video-prompt -p VideoPrompt-linux-beta.tar.gz \
+  && tar -xzf VideoPrompt-linux-beta.tar.gz && ./video-prompt-linux-beta/install.sh
 ```
+
+The installer puts the app in `~/.local/opt/video-prompt`, downloads the speech model
+(checksum-verified), adds Video Prompt to your app launcher and opens it. If ffmpeg or a working H.264
+encoder is missing, it asks before running `sudo dnf install -y ffmpeg-free openh264`. Nothing else
+needs a password.
 
 The app appears in the system tray. Click it and choose **Record…** (or press Ctrl+Alt+Shift+R), then
 pick your full screen or a region in KDE's dialog, which appears on every recording. A 3-2-1 follows,
@@ -82,8 +67,13 @@ Good to know:
   the app stops mid-recording, that recording shows there as failed, with a **Retry** button.
 - **Speech-to-text:** without whisper-cli or the model, recordings still save, without a transcript.
 
-To update, run `git pull`, `npm ci` and `npm start` in `video-prompt/desktop`. To uninstall, quit
-the app, then delete that folder and `~/.local/share/VideoPrompt`, which holds your recordings.
+To uninstall, run `./video-prompt-linux-beta/install.sh --uninstall` from an unpacked archive. It keeps
+`~/.local/share/VideoPrompt`, which holds your recordings and the speech model. Delete that too to
+remove everything.
+
+To run from source, use `npm ci` and `npm start` in `desktop/`, with Node.js LTS and ffmpeg installed.
+Publishing (maintainers): `desktop/scripts/release.sh` builds the archive, which also needs cmake and
+g++, and replaces the `linux-beta` release. `npm run package` builds it without publishing.
 
 ### Windows
 

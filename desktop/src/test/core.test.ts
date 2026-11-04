@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { Manifest, Manifest as M, RecordingMeta } from "../core/models";
 import { buildTimeline, expiredRecordings, type Retention, describeStroke, renderTimeline, segmentOffsets, sentences, stamp, titleFor, toFramePixels } from "../core/timeline";
-import { finalize, makePaths, processRecording, readJSON } from "../process/processor";
+import { finalize, makePaths, processRecording, readJSON, recoverInterrupted } from "../process/processor";
 import { parseWhisper } from "../process/tools";
 import { blended, locate, patternSteps, SAMPLE_INSET, stepLevel, type RGB, type Step } from "../core/locate";
 
@@ -100,6 +100,55 @@ test("auto-delete removes what the policy says, and never a recording still proc
   assert.deepEqual(ids({ days: 1 }), ["edge", "old", "old-review"]);
   assert.deepEqual(ids({ keepLast: 2 }), ["old", "old-review"]);
   assert.deepEqual(ids("never"), []);
+});
+
+test("recordings cut off by a crash are listed as failed, and Retry recovers them", async () => {
+  const paths = makePaths(mkdtempSync(join(tmpdir(), "vp test ")));
+  const session = JSON.stringify({ mode: "area", display: { x: 0, y: 0, w: 640, h: 400 }, area: { x: 0, y: 0, w: 640, h: 400 }, createdAt: "2026-11-04T15:32:10.000Z" });
+  const start = (id: string, meta?: object) => {
+    const raw = join(paths.recordings, id, "raw");
+    mkdirSync(raw, { recursive: true });
+    writeFileSync(join(raw, "session.json"), session);
+    writeFileSync(join(raw, "events.jsonl"), "");
+    if (meta) writeFileSync(join(paths.recordings, id, "meta.json"), JSON.stringify(meta));
+    return raw;
+  };
+  const raw = start("cut-off");
+  // A file that stops mid-write, as a crash leaves it.
+  const whole = join(raw, "whole.webm");
+  execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "testsrc2=s=640x400:r=10:d=3", "-f", "lavfi", "-i", "sine=frequency=440:duration=3", "-c:v", "libvpx", "-b:v", "1M", "-c:a", "libopus", whole]);
+  const bytes = readFileSync(whole);
+  writeFileSync(join(raw, "seg_001.webm"), bytes.subarray(0, Math.floor(bytes.length * 0.7)));
+  rmSync(whole);
+  start("stuck", { id: "stuck", status: "processing", createdAt: "2026-11-04T15:32:10.000Z" });
+  start("failed-before", { id: "failed-before", status: "processingFailed", title: "keep", createdAt: "2026-11-04T15:32:10.000Z" });
+  mkdirSync(join(paths.recordings, "finished"));
+  writeFileSync(join(paths.recordings, "finished", "meta.json"), JSON.stringify({ id: "finished", status: "ready" }));
+
+  assert.deepEqual(recoverInterrupted(paths).sort(), ["cut-off", "stuck"]);
+  const meta = (id: string) => readJSON<RecordingMeta>(join(paths.recordings, id, "meta.json"));
+  assert.equal(meta("cut-off").status, "processingFailed");
+  assert.equal(meta("stuck").status, "processingFailed");
+  assert.equal(meta("failed-before").title, "keep");
+  assert.equal(meta("finished").status, "ready");
+  assert.deepEqual(recoverInterrupted(paths), [], "nothing to do the second time");
+
+  const retried = await processRecording("cut-off", paths, "/vp-frames");
+  assert.equal(retried.status, "reviewing");
+  assert.ok(retried.duration > 1, `kept ${retried.duration}s`);
+  assert.ok(readFileSync(join(paths.recordings, "cut-off", "video.mp4")).length > 0);
+});
+
+test("a very short recording still gets its overview", async () => {
+  const paths = makePaths(mkdtempSync(join(tmpdir(), "vp test ")));
+  const id = "20261104-150000";
+  const raw = join(paths.recordings, id, "raw");
+  mkdirSync(raw, { recursive: true });
+  execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "testsrc2=s=696x444:r=10:d=0.3", "-f", "lavfi", "-i", "sine=frequency=440:duration=0.3", "-c:v", "libvpx", "-b:v", "1M", "-c:a", "libopus", join(raw, "seg_001.webm")]);
+  writeFileSync(join(raw, "session.json"), JSON.stringify({ mode: "area", display: { x: 0, y: 0, w: 696, h: 444 }, area: { x: 0, y: 0, w: 696, h: 444 }, createdAt: new Date().toISOString() }));
+  writeFileSync(join(raw, "events.jsonl"), "");
+  assert.equal((await processRecording(id, paths, "/vp-frames")).status, "reviewing");
+  assert.ok(readFileSync(join(paths.recordings, id, "overview.jpg")).length > 0);
 });
 
 test("whisper output drops bracketed non-speech", () => {

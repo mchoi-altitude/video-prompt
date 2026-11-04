@@ -7,7 +7,7 @@ import type { Manifest, Point, RawEvent, RawSession, Rect, RecordingMeta, Stroke
 import { appBitmap, trayBitmap } from "./icon";
 import { locate, patternSteps, SAMPLE_INSET, type Sample } from "../core/locate";
 import { expiredRecordings, type Retention } from "../core/timeline";
-import { finalize, makePaths, processRecording, readJSON, writeJSON } from "../process/processor";
+import { finalize, makePaths, processRecording, recoverInterrupted, readJSON, writeJSON } from "../process/processor";
 
 const root = process.env.VIDEO_PROMPT_HOME ?? join(homedir(), ".local/share/VideoPrompt");
 const paths = makePaths(root);
@@ -546,6 +546,7 @@ app.whenReady().then(() => {
   mkdirSync(paths.recordings, { recursive: true });
   if (!process.env.VIDEO_PROMPT_HOME) chmodSync(root, 0o700);
   settings = loadSettings();
+  recoverInterrupted(paths);
   session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
     // On Wayland this call is what opens the system's screen-share dialog.
     const sources = await desktopCapturer.getSources({ types: ["screen"] });

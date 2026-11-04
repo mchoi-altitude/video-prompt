@@ -64,11 +64,24 @@ echo "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002  $HOME/.l
 npm start
 ```
 
-The app appears in the system tray. Click it and choose **Record…**, then pick your full screen or a
-region in KDE's dialog, which appears on every recording. When you stop, review the recording and
-press **Copy reference**, then paste the path into Claude Code. There's no plugin on Linux yet, so
-paste is the only way to hand a recording to Claude. Without whisper-cli or the model, recordings
-still save, without a transcript.
+The app appears in the system tray. Click it and choose **Record…** (or press Ctrl+Alt+Shift+R), then
+pick your full screen or a region in KDE's dialog, which appears on every recording. A 3-2-1 follows,
+then use the control bar to pause, draw and stop. Alt+D toggles drawing, and Esc stops drawing. When
+you stop, review the recording and press **Copy reference**, then paste the path into Claude Code.
+There's no plugin on Linux yet, so paste is the only way to hand a recording to Claude.
+
+Good to know:
+
+- **Regions:** the app measures where a region is during the countdown, so faint lines can show on
+  screen. It then draws a red outline around the region, which isn't in the video. If something at the
+  region's corners is changing, such as a playing video, the measurement can fail. That recording
+  still saves, with no outline and no coordinates for your marks.
+- **The control bar** shows in the video if it's inside what you're recording. It's placed outside a
+  measured region when there's room, and you can drag it.
+- **Clicks** aren't logged on Linux, because apps can't see clicks in other apps.
+- **Recordings** go to the Trash after 3 days by default, which you can change in **Recordings…**. If
+  the app stops mid-recording, that recording shows there as failed, with a **Retry** button.
+- **Speech-to-text:** without whisper-cli or the model, recordings still save, without a transcript.
 
 To update, run `git pull`, `npm ci` and `npm start` in `video-prompt/desktop`. To uninstall, quit
 the app, then delete that folder and `~/.local/share/VideoPrompt`, which holds your recordings.
@@ -139,6 +152,7 @@ such as a cloud workspace, or into an issue.
   (AVFoundation: window video, overview, frame extraction), `VPProcess` (pipeline +
   whisper.cpp), `VPMCP` + `vp-mcp` (MCP server), `vp-process` and `vp-frames` (CLIs), `VPApp` +
   `VPCapture` + `VideoPrompt` (the Mac app).
+- `desktop/`: the Fedora app (Electron and TypeScript). `npm test` runs its tests.
 - `plugins/video-prompt`, `.claude-plugin/marketplace.json`: the Claude Code plugin.
 - `prototype/`: the original Python prototype (package name `screen_prompt`), from before the
   video-first design (it picked keyframes and wrote `prompt.md`). Kept as a reference; capture and

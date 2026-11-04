@@ -60,7 +60,7 @@ async function main(path: string) {
     const t = times[i];
     const name = `${String(i + 1).padStart(3, "0")}_t${t.toFixed(2).padStart(8, "0")}s.jpg`;
     const file = join(out, name);
-    await run(ffmpeg, ["-v", "error", "-y", "-ss", String(t), "-i", path, "-frames:v", "1", "-vf", scale, "-q:v", "3", "-update", "1", file]);
+    await run(ffmpeg, ["-v", "error", "-y", "-ss", String(t), "-i", path, "-frames:v", "1", "-vf", `${scale},format=yuvj420p`, "-q:v", "3", "-strict", "unofficial", "-update", "1", file]);
     console.log(file);
   }
 }

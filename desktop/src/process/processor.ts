@@ -1,5 +1,5 @@
 // Port of Sources/VPProcess/Processor.swift and Finalize.swift, with ffmpeg in place of AVFoundation.
-import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { buildTimeline, describeStroke, renderTimeline, round2, segmentOffsets, sentences, titleFor, toFramePixels } from "../core/timeline";
 import {
@@ -239,10 +239,41 @@ async function makeOverview(video: string, duration: number, width: number, heig
   const th = Math.max(16, Math.floor(tileWidth * aspect * fit));
   await run(ffmpeg, [
     "-v", "error", "-y", "-i", video,
-    "-vf", `fps=1/${secondsPerTile},scale=${tw}:${th},tile=${cols}x${rows}:padding=${gap}`,
-    "-frames:v", "1", "-q:v", "4", "-update", "1", out,
+    "-vf", `fps=1/${secondsPerTile}:start_time=0:round=up,scale=${tw}:${th},tile=${cols}x${rows}:padding=${gap},format=yuvj420p`,
+    "-frames:v", "1", "-q:v", "4", "-strict", "unofficial", "-update", "1", out,
   ]);
+  // ffmpeg can succeed without writing anything, and readers rely on this file.
+  if (!existsSync(out)) throw new Error("the overview wasn't written");
   return { secondsPerTile };
+}
+
+/**
+ * Run at launch, when nothing can be recording or processing: finds recordings a crash or quit cut
+ * off, and marks them failed so they're listed and can be retried. Returns their ids.
+ */
+export function recoverInterrupted(paths: Paths): string[] {
+  if (!existsSync(paths.recordings)) return [];
+  return readdirSync(paths.recordings).filter((id) => {
+    const dir = join(paths.recordings, id);
+    const sessionFile = join(dir, "raw", "session.json");
+    if (!existsSync(sessionFile)) return false;
+    const metaFile = join(dir, "meta.json");
+    const meta = existsSync(metaFile) ? readJSON<RecordingMeta>(metaFile) : null;
+    if (meta && meta.status !== "processing") return false;
+    const { createdAt } = readJSON<RawSession>(sessionFile);
+    const failed: RecordingMeta = {
+      id,
+      title: titleFor([], new Date(createdAt)),
+      createdAt,
+      duration: 0,
+      mode: "area",
+      status: "processingFailed",
+      sizeBytes: folderSize(dir),
+      error: "The app stopped before this recording finished",
+    };
+    writeJSON(metaFile, failed);
+    return true;
+  });
 }
 
 /** Applies the review panel's edits, rewrites `manifest.json` and `timeline.md`, and marks it `ready`. */

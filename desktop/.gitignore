@@ -1,0 +1,17 @@
+node_modules/
+dist/
+out/
+recordings/
+*.mp4
+*.webm
+*.mkv
+*.mov
+*.wav
+*.m4a
+*.ogg
+*.opus
+*.jpg
+*.jpeg
+*.png
+*.jsonl
+vendor/

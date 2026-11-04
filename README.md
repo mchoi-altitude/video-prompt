@@ -3,10 +3,16 @@
 Record your screen, draw on it, and talk through what you want — then hand that recording to
 Claude Code as a prompt.
 
-**Status:** early. We're aligning on the [user journey](docs/user-journey.md) before building
-the app. The first target is a native macOS menu-bar app.
+**Status:** early. The macOS app is in internal beta. The Fedora app runs from source and is still
+being tested. Windows isn't available yet.
 
-## Internal beta (team members)
+## Install
+
+- [macOS](#macos-internal-beta)
+- [Linux (Fedora KDE)](#linux-fedora-kde)
+- [Windows](#windows)
+
+### macOS (internal beta)
 
 You need access to this repo, plus the GitHub CLI (`gh auth login`), Homebrew and Claude Code.
 To install, or later to update, run:
@@ -26,9 +32,67 @@ Publishing a beta (maintainers): `scripts/release-beta.sh` (or `--dry-run` to bu
 
 Known issues and deferred fixes: [`docs/known-issues.md`](docs/known-issues.md).
 
+### Linux (Fedora KDE)
+
+Tested on Fedora 44 with KDE Plasma 6.8 on Wayland, one monitor at 100% scale. There's no installer
+yet, so this runs from source. These steps haven't been tried on a fresh machine, so please report
+anything that's missing in this repo's Issues.
+
+You need Node.js LTS, ffmpeg and the build tools for whisper.cpp:
+
+```bash
+sudo dnf install -y nodejs npm ffmpeg-free openh264 gcc-c++ cmake make git
+
+git clone https://github.com/mchoi-altitude/video-prompt.git
+cd video-prompt/desktop
+npm ci
+
+# Speech-to-text, built into desktop/vendor (not committed)
+mkdir -p vendor/bin
+git clone --depth 1 --branch v1.9.5 https://github.com/ggml-org/whisper.cpp.git vendor/whisper.cpp
+cmake -S vendor/whisper.cpp -B vendor/whisper.cpp/build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+cmake --build vendor/whisper.cpp/build --target whisper-cli -j
+cp vendor/whisper.cpp/build/bin/whisper-cli vendor/bin/
+
+# Speech model (148 MB, checksum-verified)
+mkdir -p ~/.local/share/VideoPrompt/models
+curl -fL -o ~/.local/share/VideoPrompt/models/ggml-base.en.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
+echo "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002  $HOME/.local/share/VideoPrompt/models/ggml-base.en.bin" | sha256sum -c -
+
+npm start
+```
+
+The app appears in the system tray. Click it and choose **Record…** (or press Ctrl+Alt+Shift+R), then
+pick your full screen or a region in KDE's dialog, which appears on every recording. A 3-2-1 follows,
+then use the control bar to pause, draw and stop. Alt+D toggles drawing, and Esc stops drawing. When
+you stop, review the recording and press **Copy reference**, then paste the path into Claude Code.
+There's no plugin on Linux yet, so paste is the only way to hand a recording to Claude.
+
+Good to know:
+
+- **Regions:** the app measures where a region is during the countdown, so faint lines can show on
+  screen. It then draws a red outline around the region, which isn't in the video. If something at the
+  region's corners is changing, such as a playing video, the measurement can fail. That recording
+  still saves, with no outline and no coordinates for your marks.
+- **The control bar** shows in the video if it's inside what you're recording. It's placed outside a
+  measured region when there's room, and you can drag it.
+- **Clicks** aren't logged on Linux, because apps can't see clicks in other apps.
+- **Recordings** go to the Trash after 3 days by default, which you can change in **Recordings…**. If
+  the app stops mid-recording, that recording shows there as failed, with a **Retry** button.
+- **Speech-to-text:** without whisper-cli or the model, recordings still save, without a transcript.
+
+To update, run `git pull`, `npm ci` and `npm start` in `video-prompt/desktop`. To uninstall, quit
+the app, then delete that folder and `~/.local/share/VideoPrompt`, which holds your recordings.
+
+### Windows
+
+Not available yet. It's planned to share the Fedora app's code: see the
+[design](docs/superpowers/specs/2026-11-04-windows-linux-design.md).
+
 ## Developing
 
-Needs macOS 14+ and Swift 6.3 (the Command Line Tools are enough for the core; the app will need
+This section covers the macOS app. Needs macOS 14+ and Swift 6.3 (the Command Line Tools are enough for the core; the app will need
 Xcode). Transcription uses whisper.cpp: `brew install whisper-cpp`.
 
 ```bash
@@ -87,6 +151,7 @@ such as a cloud workspace, or into an issue.
   (AVFoundation: window video, overview, frame extraction), `VPProcess` (pipeline +
   whisper.cpp), `VPMCP` + `vp-mcp` (MCP server), `vp-process` and `vp-frames` (CLIs), `VPApp` +
   `VPCapture` + `VideoPrompt` (the Mac app).
+- `desktop/`: the Fedora app (Electron and TypeScript). `npm test` runs its tests.
 - `plugins/video-prompt`, `.claude-plugin/marketplace.json`: the Claude Code plugin.
 - `prototype/`: the original Python prototype (package name `screen_prompt`), from before the
   video-first design (it picked keyframes and wrote `prompt.md`). Kept as a reference; capture and

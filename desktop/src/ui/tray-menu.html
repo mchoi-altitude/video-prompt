@@ -1,0 +1,53 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'" />
+    <title>Video Prompt</title>
+    <style>
+      :root { color-scheme: light dark; }
+      html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; font: 13px system-ui; }
+      #menu {
+        box-sizing: border-box;
+        height: 100%;
+        padding: 5px;
+        border-radius: 9px;
+        border: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
+        background: Canvas;
+        color: CanvasText;
+      }
+      button {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        width: 100%;
+        height: 24px;
+        align-items: center;
+        padding: 0 9px;
+        border: 0;
+        border-radius: 5px;
+        background: none;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+      }
+      button:hover:enabled { background: Highlight; color: HighlightText; }
+      button:hover:enabled .hint { color: inherit; opacity: 0.8; }
+      button:disabled { opacity: 0.4; }
+      button[hidden], hr[hidden] { display: none; }
+      .hint { color: color-mix(in srgb, CanvasText 55%, transparent); }
+      hr { border: 0; border-top: 1px solid color-mix(in srgb, CanvasText 14%, transparent); margin: 4px 9px; }
+    </style>
+  </head>
+  <body>
+    <div id="menu">
+      <button id="stop" hidden><span>Stop recording</span></button>
+      <button id="record"><span>Record…</span><span class="hint">Ctrl+Alt+Shift+R</span></button>
+      <hr />
+      <button id="recordings"><span>Recordings…</span><span class="hint" id="count"></span></button>
+      <button id="settings"><span>Settings…</span></button>
+      <button id="quit"><span>Quit Video Prompt</span></button>
+    </div>
+    <script src="tray-menu.js"></script>
+  </body>
+</html>

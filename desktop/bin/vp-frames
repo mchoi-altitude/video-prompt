@@ -1,0 +1,4 @@
+#!/bin/sh
+# Runs vp-frames with the app's own Electron, so Claude doesn't need Node installed.
+here="$(dirname "$(readlink -f "$0")")"
+ELECTRON_RUN_AS_NODE=1 exec "$here/../node_modules/electron/dist/electron" "$here/../dist/frames/main.js" "$@"

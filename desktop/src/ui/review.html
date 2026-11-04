@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; media-src file:" />
+    <title>Review recording</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { margin: 0; padding: 16px; font: 14px system-ui; background: Canvas; color: CanvasText; }
+      button { padding: 6px 12px; }
+      video { width: 100%; max-height: 340px; background: #000; }
+      textarea { width: 100%; box-sizing: border-box; font: inherit; }
+      label { display: block; margin: 10px 0 4px; font-weight: 600; }
+      #hint { margin: 4px 0; opacity: 0.7; }
+      #form { display: none; }
+      .actions { display: flex; gap: 8px; margin-top: 12px; }
+      #copy { font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <div id="status">Processing your recording…</div>
+    <div id="form">
+      <video id="video" controls></video>
+      <label for="transcript">What you said</label>
+      <textarea id="transcript" rows="5"></textarea>
+      <p id="hint"></p>
+      <label for="note">Typed note</label>
+      <textarea id="note" rows="2"></textarea>
+      <div class="actions">
+        <button id="copy">Copy reference ⏎</button>
+        <button id="discard">Discard</button>
+      </div>
+    </div>
+    <script src="review.js"></script>
+  </body>
+</html>

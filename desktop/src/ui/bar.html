@@ -1,0 +1,89 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'" />
+    <title>Controls</title>
+    <style>
+      /* Same sizes and colors as ControlBarView in Sources/VideoPrompt/ControlBarPanel.swift. Always dark. */
+      html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; font: 11px system-ui; color: #fff; }
+      body { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 4px; box-sizing: border-box; }
+      #pill {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 52px;
+        padding: 0 12px;
+        box-sizing: border-box;
+        border-radius: 26px;
+        background: rgba(28, 28, 28, 0.94);
+        -webkit-app-region: drag;
+      }
+      #dot { width: 10px; height: 10px; border-radius: 50%; background: #e5484d; flex: none; }
+      .paused #dot { background: #8e8e93; }
+      #timer { min-width: 44px; font: 14px ui-monospace, monospace; }
+      #divider { width: 1px; height: 22px; background: rgba(255, 255, 255, 0.25); }
+      button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        border: 0;
+        background: none;
+        color: #fff;
+        flex: none;
+        -webkit-app-region: no-drag;
+      }
+      svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      svg.solid { fill: currentColor; stroke: none; }
+      .round { width: 36px; height: 36px; border-radius: 50%; }
+      .round:hover:enabled { background: rgba(255, 255, 255, 0.12); }
+      #draw.on, #draw.on:hover { background: #e5484d; }
+      button:disabled { opacity: 0.4; }
+      #tools { display: none; gap: 2px; padding: 2px; border-radius: 16px; background: rgba(255, 255, 255, 0.12); -webkit-app-region: no-drag; }
+      #tools button { width: 32px; height: 28px; border-radius: 14px; }
+      #tools svg { width: 16px; height: 16px; }
+      #tools button.selected { background: rgba(255, 255, 255, 0.3); }
+      #undo, #clear { display: none; }
+      .drawing #tools { display: flex; }
+      .drawing #undo, .drawing #clear { display: flex; }
+      #stop { width: 36px; height: 36px; border-radius: 50%; background: #fff; }
+      #stop span { width: 12px; height: 12px; border-radius: 2px; background: #000; }
+      #caption { text-shadow: 0 0 4px rgba(0, 0, 0, 0.9), 0 1px 2px rgba(0, 0, 0, 0.9); white-space: nowrap; }
+    </style>
+  </head>
+  <body>
+    <div id="pill">
+      <div id="dot"></div>
+      <span id="timer">0:00</span>
+      <button id="pause" class="round" title="Pause" aria-label="Pause">
+        <svg id="pause-icon" class="solid" viewBox="0 0 24 24"><rect x="6" y="4" width="4.5" height="16" rx="1" /><rect x="13.5" y="4" width="4.5" height="16" rx="1" /></svg>
+        <svg id="play-icon" class="solid" viewBox="0 0 24 24" style="display: none"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z" /></svg>
+      </button>
+      <div id="divider"></div>
+      <button id="draw" class="round" title="Draw (Alt+D)" aria-label="Draw">
+        <svg viewBox="0 0 24 24"><path d="M4 20l1.2-5L16.5 3.7a2 2 0 0 1 2.8 0l1 1a2 2 0 0 1 0 2.8L9 18.8 4 20z" /><path d="M14.5 5.7l3.8 3.8" /></svg>
+      </button>
+      <div id="tools">
+        <button id="pen" class="selected" title="Pen" aria-label="Pen">
+          <svg viewBox="0 0 24 24"><path d="M3 17c2-6 4-10 6-10s1 9 3 9 2-7 4-7 1 5 5 4" /></svg>
+        </button>
+        <button id="arrow" title="Arrow" aria-label="Arrow">
+          <svg viewBox="0 0 24 24"><path d="M6 18L18 6M9 6h9v9" /></svg>
+        </button>
+        <button id="box" title="Box" aria-label="Box">
+          <svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1.5" /></svg>
+        </button>
+      </div>
+      <button id="undo" class="round" title="Undo" aria-label="Undo">
+        <svg viewBox="0 0 24 24"><path d="M9 7L4 12l5 5" /><path d="M4 12h10a5 5 0 0 1 5 5v1" /></svg>
+      </button>
+      <button id="clear" class="round" title="Clear drawings" aria-label="Clear drawings">
+        <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6.5 7l1 12a1.5 1.5 0 0 0 1.5 1.4h6a1.5 1.5 0 0 0 1.5-1.4l1-12M10 11v5M14 11v5" /></svg>
+      </button>
+      <button id="stop" title="Stop" aria-label="Stop"><span></span></button>
+    </div>
+    <div id="caption"></div>
+    <script src="bar.js"></script>
+  </body>
+</html>

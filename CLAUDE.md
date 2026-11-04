@@ -20,8 +20,9 @@ handed to a Claude Code session.
   `docs/superpowers/specs/2026-10-06-video-prompt-design.md` (clickable prototype linked there).
   Public open-source release, bundle ID `ai.altitudeiq.videoprompt`, AltitudeIQ-owned Apple
   Developer account.
-- **Linux later, maybe.** A Python/Qt + xdg-desktop-portal prototype was started; see "Linux
-  notes" below.
+- **Fedora: an Electron app in `desktop/`.** See "Updates after building the Fedora app" in
+  `docs/superpowers/specs/2026-11-04-windows-linux-design.md`. The Python/Qt prototype in `prototype/`
+  is only a reference now.
 
 ## Key technical facts (learned the hard way)
 
@@ -67,7 +68,18 @@ handed to a Claude Code session.
 - On a full menu bar, macOS can put a new status item under the MacBook notch; the app asks for
   the far-right position (`NSStatusItem Preferred Position`).
 
-## Linux notes (for later)
+## Linux notes
+
+- Electron on Plasma: run with `--ozone-platform=x11`. Windows need `type: "notification"` to stay on
+  top, and `setBounds` again after showing, because the size given at creation is confined to the work area.
+- Under XWayland, `screen.getCursorScreenPoint()` goes stale once the pointer is over a native Wayland
+  app, so use the windows' own pointer events. `getBounds()` can also differ from the real window.
+- Resizing a canvas wipes it. A window reaches full size only after it's shown.
+- Capture alters colors, so don't encode data in exact color values. Neutral grays arrived intact.
+- A Plasma panel can be see-through, so the system theme doesn't say what color is behind the tray
+  icon. The icon brings its own dark tile.
+- `whisper-cpp` on Fedora has only libraries, with no `whisper-cli`. Build it into `desktop/vendor/bin`.
+- ffmpeg can succeed without writing a file, for example an overview of a very short clip.
 
 - Wayland: capture via the xdg-desktop-portal ScreenCast (persist_mode=2 + restore_token
   skips the picker after the first time), then a PipeWire fd → `gst-launch-1.0 pipewiresrc`.

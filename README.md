@@ -147,3 +147,7 @@ such as a cloud workspace, or into an issue.
   video-first design (it picked keyframes and wrote `prompt.md`). Kept as a reference; capture and
   UI there are incomplete.
 - `CLAUDE.md`: context and decisions for Claude Code sessions working in this repo.
+
+## License
+
+[MIT](LICENSE). Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).

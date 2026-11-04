@@ -7,11 +7,13 @@ import type { Manifest, Point, RawEvent, RawSession, Rect, RecordingMeta, Stroke
 import { appBitmap, trayBitmap } from "./icon";
 import { locate, patternSteps, SAMPLE_INSET, type Sample } from "../core/locate";
 import { expiredRecordings, type Retention } from "../core/timeline";
+import { dataRoot, restrictsDataFolder, vpFramesPath, windowType } from "../core/platform";
 import { finalize, makePaths, processRecording, recoverInterrupted, readJSON, writeJSON } from "../process/processor";
 
-const root = process.env.VIDEO_PROMPT_HOME ?? join(homedir(), ".local/share/VideoPrompt");
+const platform = process.platform;
+const root = dataRoot(platform, process.env, homedir());
 const paths = makePaths(root);
-const vpFrames = join(__dirname, "../../bin/vp-frames");
+const vpFrames = vpFramesPath(platform, join(__dirname, "../.."));
 const settingsFile = join(root, "settings.json");
 
 type Settings = { retention: Retention; drawingsFade: boolean };
@@ -227,7 +229,7 @@ async function locateRegion(display: Display, got: { width: number; height: numb
 
 /** `region` is the capture's size when the dialog gave a region rather than a whole screen. */
 async function beginRecording(display: Display, region: { width: number; height: number } | null) {
-  overlay = new BrowserWindow({ ...display.bounds, type: "notification", transparent: true, frame: false, hasShadow: false, resizable: false, skipTaskbar: true, focusable: false, alwaysOnTop: true, show: false, webPreferences });
+  overlay = new BrowserWindow({ ...display.bounds, ...windowType(platform), transparent: true, frame: false, hasShadow: false, resizable: false, skipTaskbar: true, focusable: false, alwaysOnTop: true, show: false, webPreferences });
   overlay.setAlwaysOnTop(true, "screen-saver");
   overlay.setVisibleOnAllWorkspaces(true);
   overlay.setIgnoreMouseEvents(true);
@@ -261,7 +263,7 @@ async function beginRecording(display: Display, region: { width: number; height:
   segment = 0;
   elapsedBefore = 0;
 
-  bar = new BrowserWindow({ ...placeBar(display, located), type: "notification", transparent: true, hasShadow: false, frame: false, resizable: false, skipTaskbar: true, alwaysOnTop: true, show: false, webPreferences });
+  bar = new BrowserWindow({ ...placeBar(display, located), ...windowType(platform), transparent: true, hasShadow: false, frame: false, resizable: false, skipTaskbar: true, alwaysOnTop: true, show: false, webPreferences });
   bar.setAlwaysOnTop(true, "screen-saver");
   bar.setVisibleOnAllWorkspaces(true);
   bar.loadFile(ui("bar"));
@@ -548,7 +550,7 @@ app.on("second-instance", () => toggleTrayMenu());
 
 app.whenReady().then(() => {
   mkdirSync(paths.recordings, { recursive: true });
-  if (!process.env.VIDEO_PROMPT_HOME) chmodSync(root, 0o700);
+  if (!process.env.VIDEO_PROMPT_HOME && restrictsDataFolder(platform)) chmodSync(root, 0o700);
   settings = loadSettings();
   recoverInterrupted(paths);
   session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {

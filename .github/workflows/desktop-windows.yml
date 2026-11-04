@@ -46,7 +46,9 @@ jobs:
           & "$env:RUNNER_TEMP\unpacked\video-prompt-windows-beta\install.cmd" -NoLaunch
           if ($LASTEXITCODE -ne 0) { throw "install failed" }
           $env:ELECTRON_RUN_AS_NODE = "1"
-          & "$app\electron.exe" scripts\smoke-test.js "$app\resources\app" "$env:LOCALAPPDATA\VideoPrompt\models" vendor\whisper.cpp\samples\jfk.wav
+          # Electron is a windowed program, so without the pipe PowerShell neither waits nor sees its exit code.
+          & "$app\electron.exe" scripts\smoke-test.js "$app\resources\app" "$env:LOCALAPPDATA\VideoPrompt\models" vendor\whisper.cpp\samples\jfk.wav | Tee-Object smoke.log | Out-Host
+          if (-not (Select-String -Quiet "SMOKE TEST PASSED" smoke.log)) { throw "smoke test didn't finish" }
           if ($LASTEXITCODE -ne 0) { throw "smoke test failed" }
           Remove-Item Env:ELECTRON_RUN_AS_NODE
           $p = Start-Process "$app\electron.exe" -PassThru

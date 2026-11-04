@@ -33,7 +33,12 @@ Copy-Item dist, bin $AppDir -Recurse
 Remove-Item "$AppDir\dist\test" -Recurse -Force
 Copy-Item vendor\whisper.cpp\build-portable\bin\Release\whisper-cli.exe "$AppDir\vendor\bin\"
 Copy-Item vendor\whisper.cpp\LICENSE "$AppDir\vendor\bin\whisper.cpp-LICENSE"
-Copy-Item (Get-Command ffmpeg).Source, (Get-Command ffprobe).Source "$AppDir\vendor\bin\"
+# The real programs: Chocolatey's ffmpeg on PATH is a small redirect that only works on this machine.
+$Chocolatey = Join-Path $env:ChocolateyInstall "lib\ffmpeg\tools\ffmpeg\bin"
+$FfmpegDir = if (Test-Path "$Chocolatey\ffmpeg.exe") { $Chocolatey } else { Split-Path (Get-Command ffmpeg).Source }
+Copy-Item "$FfmpegDir\ffmpeg.exe", "$FfmpegDir\ffprobe.exe" "$AppDir\vendor\bin\"
+Run "$AppDir\vendor\bin\ffmpeg.exe" -v error -version
+if ((Get-Item "$AppDir\vendor\bin\ffmpeg.exe").Length -lt 10MB) { throw "That ffmpeg looks like a redirect, not the real program" }
 
 # The Start menu icon, from the same drawing code as the tray.
 Run node scripts\write-icon.js video-prompt.raw

@@ -39,6 +39,7 @@ const { ffmpeg, findWhisper, transcribeWords } = require(join(dist, "process/too
   assert.equal(printed.length, 2);
   assert.ok(existsSync(printed[0]));
   console.log("vp-frames ok:", printed.length, "frames");
+  console.log("SMOKE TEST PASSED");
 })().catch((e) => {
   console.error(e);
   process.exit(1);

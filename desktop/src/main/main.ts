@@ -3,6 +3,7 @@ import { app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, ipcMain
 import { createWriteStream, existsSync, mkdirSync, appendFileSync, chmodSync, readdirSync, type WriteStream } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { Manifest, Point, RawEvent, RawSession, Rect, RecordingMeta, StrokeTool } from "../core/models";
 import { appBitmap, trayBitmap } from "./icon";
 import { locate, patternSteps, SAMPLE_INSET, type Sample } from "../core/locate";
@@ -323,6 +324,8 @@ async function stopRecording() {
   overlay?.destroy();
   bar?.destroy();
   overlay = bar = undefined;
+  // The bar can close under the pointer, and then it never reports the pointer leaving.
+  barHovered = false;
   await runProcessing(recordingId);
 }
 
@@ -416,7 +419,7 @@ function reviewData(id: string) {
   const m = readJSON<Manifest>(join(dir, "manifest.json"));
   return {
     id,
-    video: join(dir, "video.mp4"),
+    video: pathToFileURL(join(dir, "video.mp4")).href,
     duration: m.duration,
     transcript: m.transcript.map((s) => s.text).join(" "),
     transcription: m.transcription,
@@ -494,7 +497,7 @@ function openRecordings() {
   recordingsWindow.on("closed", () => (recordingsWindow = undefined));
 }
 
-ipcMain.handle("recordings-list", () => listRecordings().map((m) => ({ ...m, overview: join(paths.recordings, m.id, "overview.jpg") })));
+ipcMain.handle("recordings-list", () => listRecordings().map((m) => ({ ...m, overview: pathToFileURL(join(paths.recordings, m.id, "overview.jpg")).href })));
 ipcMain.on("recordings-review", (_e, id: string) => {
   const review = openReview(id);
   review.webContents.once("did-finish-load", () => review.webContents.send("review-ready", reviewData(id)));

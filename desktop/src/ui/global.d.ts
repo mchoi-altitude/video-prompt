@@ -1,7 +1,7 @@
 type Tool = "pen" | "arrow" | "box";
-type Meta = { id: string; title: string; createdAt: string; duration: number; status: string; sizeBytes: number; overview: string; error?: string };
+type Meta = { id: string; title: string; createdAt: string; duration: number; status: string; sizeBytes: number; overview: string /* file:// URL */; error?: string };
 type Prefs = { retention: { days: number } | { keepLast: number } | "never"; drawingsFade: boolean };
-type ReviewData = { id: string; video: string; duration: number; transcript: string; transcription: string; note: string };
+type ReviewData = { id: string; video: string /* file:// URL */; duration: number; transcript: string; transcription: string; note: string };
 
 declare const vp: {
   trayMenuInfo(): Promise<{ busy: boolean; canStop: boolean; count: number }>;

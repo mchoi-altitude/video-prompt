@@ -4,7 +4,7 @@ Record your screen, draw on it, and talk through what you want — then hand tha
 Claude Code as a prompt.
 
 **Status:** early. The macOS app is in internal beta. The Fedora app runs from source and is still
-being tested. Windows isn't available yet.
+being tested. The Windows app builds from source and is being tested; there's no published download yet.
 
 ## Install
 
@@ -77,7 +77,31 @@ g++, and replaces the `linux-beta` release. `npm run package` builds it without 
 
 ### Windows
 
-Not available yet. Work on it has started: see [`desktop/WINDOWS.md`](desktop/WINDOWS.md).
+Tested on Windows 11 25H2, one monitor at 100% and 150% scale. There's no published download yet, so build
+the installer from source (below), then run `VideoPrompt-windows-beta-setup.exe`. It installs for your user
+only, needs no admin rights, and includes everything: ffmpeg, whisper.cpp and the speech model. It isn't
+signed, so Windows SmartScreen says "Windows protected your PC": choose **More info**, then **Run anyway**.
+
+The app appears in the system tray, possibly under the **^** arrow. Click it and choose **Record whole
+screen** or **Record selected area…** (drag a rectangle; Esc cancels). Ctrl+Alt+Shift+R starts the one you
+used last. A 3-2-1 follows, then use the control bar to pause, draw and stop. Alt+D toggles drawing, and
+Esc stops drawing. The control bar isn't in the video. When you stop, review the recording and press
+**Copy reference**, or **Copy WSL path** for Claude Code running in WSL, then paste it into Claude Code.
+The recording tells Claude how to look at the video from PowerShell, Git Bash or WSL.
+
+Good to know:
+
+- **Clicks** aren't logged yet: that needs a native mouse hook.
+- **Recordings** are in `%LOCALAPPDATA%\VideoPrompt` and go to the Recycle Bin after 3 days by default,
+  which you can change in **Recordings…**. If the app stops mid-recording, that recording shows there as
+  failed, with a **Retry** button.
+- **Uninstall** from Settings → Apps. It keeps `%LOCALAPPDATA%\VideoPrompt`, which holds your recordings.
+
+To run from source, with Node.js LTS, in `desktop/`: `node scripts/fetch-tools.mjs` (downloads pinned,
+checksum-verified ffmpeg, whisper-cli and speech model into `vendor/`), then `npm ci` and `npm start`.
+`npm run package:win` builds `out/VideoPrompt-windows-beta-setup.exe`. The bundled ffmpeg is an unmodified
+GPL build from [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds); its license and source links
+ship next to it. Notes for whoever continues the Windows work: [`desktop/WINDOWS.md`](desktop/WINDOWS.md).
 
 ## Developing
 
@@ -140,7 +164,7 @@ such as a cloud workspace, or into an issue.
   (AVFoundation: window video, overview, frame extraction), `VPProcess` (pipeline +
   whisper.cpp), `VPMCP` + `vp-mcp` (MCP server), `vp-process` and `vp-frames` (CLIs), `VPApp` +
   `VPCapture` + `VideoPrompt` (the Mac app).
-- `desktop/`: the Fedora app (Electron and TypeScript). `npm test` runs its tests.
+- `desktop/`: the Fedora and Windows app (Electron and TypeScript). `npm test` runs its tests.
 - `plugins/video-prompt`, `.claude-plugin/marketplace.json`: the Claude Code plugin.
 - `prototype/`: the original Python prototype (package name `screen_prompt`), from before the
   video-first design (it picked keyframes and wrote `prompt.md`). Kept as a reference; capture and

@@ -23,6 +23,12 @@ handed to a Claude Code session.
 - **Fedora: an Electron app in `desktop/`.** See "Updates after building the Fedora app" in
   `docs/superpowers/specs/2026-11-04-windows-linux-design.md`. The Python/Qt prototype in `prototype/`
   is only a reference now.
+- **Windows: the same Electron app.** Platform differences live in `desktop/src/core/platform.ts`, whose
+  tests check both systems' answers on either one; Linux answers must not change without a Fedora retest.
+  Like the Mac, Windows has Record whole screen / Record selected area… (the app's own picker, no system
+  dialog) and hides the control bar from the video. It bundles a GPL ffmpeg build (Michael approved),
+  whisper-cli and the speech model (`desktop/scripts/fetch-tools.mjs`), in an unsigned per-user NSIS
+  installer (`npm run package:win`).
 
 ## Key technical facts (learned the hard way)
 
@@ -87,3 +93,18 @@ handed to a Claude Code session.
   overlay always-on-top or position windows.
 - Fedora ships a stub OpenH264 (`noopenh264`): encoders are listed but fail. Test-encode
   before choosing; fall back to VP8/VP9.
+
+## Windows notes
+
+- Git on Windows converts to CRLF unless told otherwise. `.gitattributes` keeps LF, since shell scripts run
+  in WSL and tests compare files byte for byte.
+- A focused Electron window answers the default menu's shortcuts: F11 made the see-through control bar full
+  screen over the marks. They still reached the video, since the bar is hidden from capture, so check the
+  screen, not only the video. The bar is non-focusable and the default menu is removed on Windows.
+- A window that closes under the pointer never reports the pointer leaving. Reset hover state yourself.
+- Git Bash runs a `.cmd` through `cmd /c`, which splits its path at spaces. Git Bash and WSL use
+  `bin/vp-frames.sh`; PowerShell uses `bin/vp-frames.cmd`, called with `&`.
+- Node runs a `.cmd` only through `cmd.exe /d /s /c` with every argument quoted.
+- Git Bash's `tar` reads `C:` as a remote host. Use `%SystemRoot%\System32\tar.exe`.
+- From WSL, a Windows program gets an environment variable only if `WSLENV` names it.
+- `desktopCapturer` on Windows gives every screen without a dialog. Match `display_id` to `Display.id`.

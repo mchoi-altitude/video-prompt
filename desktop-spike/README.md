@@ -1,5 +1,8 @@
 # Windows and Fedora test guide
 
+**For Windows, start with [`desktop/WINDOWS.md`](../desktop/WINDOWS.md).** The Fedora app now exists, so
+adapt it rather than building the test app below. The Windows checks below still apply.
+
 **For Claude Code, running on the machine under test.** Read this whole file, then run the section
 for your system with the person at the keyboard.
 

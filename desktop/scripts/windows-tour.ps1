@@ -92,9 +92,44 @@ Shot "10-after-stop"
 Start-Sleep -Seconds 20
 Shot "11-review"
 
-# What the recording itself contains, to compare with what was on screen.
+# Return is Copy reference: it should put the timeline's path on the clipboard and close the window.
+Move-To 500 400; Keys @(0x0D)
+Start-Sleep -Seconds 2
+Shot "12-after-copy"
+Write-Host "clipboard: $(Get-Clipboard)"
+
+function Save-Frames($prefix, $times) {
+  $root = Join-Path $env:LOCALAPPDATA "VideoPrompt\recordings"
+  $latest = Get-ChildItem $root -Directory -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -Last 1
+  if (-not $latest) { Write-Host "no recording folder"; return }
+  Write-Host "$prefix recording: $($latest.Name), files: $((Get-ChildItem $latest.FullName).Name -join ', ')"
+  $video = Join-Path $latest.FullName "video.mp4"
+  if (Test-Path $video) {
+    foreach ($t in $times) { & $Ffmpeg -v error -y -ss $t -i $video -frames:v 1 -update 1 (Join-Path $Out "$prefix-video-at-$($t)s.png") }
+  }
+}
+
+Save-Frames "area" @(0, 0.2, 1)
+
+# Dragging across the whole screen: the bar now sits inside what's recorded, so the video shows whether
+# it's really hidden from capture. The screen must show it missing from this frame.
+Keys @(0x11, 0x12, 0x10, 0x52)
+Start-Sleep -Seconds 2
+Move-To 0 0; Press
+foreach ($i in 1..12) { Move-To ($screen.Width * $i / 12) ($screen.Height * $i / 12) }
+Release
+Start-Sleep -Seconds 9
+Shot "20-whole-recording"
+$barW = 330; $barX = [int](($screen.Width - $barW) / 2); $barY = 12
+Click ($barX + 165 + 90) ($barY + 30)
+Start-Sleep -Seconds 25
+Shot "21-whole-review"
+Save-Frames "whole" @(2, 5)
+Move-To 500 400; Keys @(0x0D)
+
+# What the first recording contains, to compare with what was on screen.
 $root = Join-Path $env:LOCALAPPDATA "VideoPrompt\recordings"
-$latest = Get-ChildItem $root -Directory -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -Last 1
+$latest = Get-ChildItem $root -Directory -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -First 1
 if ($latest) {
   Write-Host "recording: $($latest.Name), files: $((Get-ChildItem $latest.FullName).Name -join ', ')"
   $meta = Join-Path $latest.FullName "meta.json"

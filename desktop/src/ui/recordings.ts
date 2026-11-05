@@ -17,7 +17,6 @@
   };
 
   const megabytes = (bytes: number) => `${(bytes / 1_000_000).toFixed(1)} MB`;
-  const fileUrl = (path: string) => `file://${path.split("/").map(encodeURIComponent).join("/")}`;
 
   const statusText = (m: Meta) => {
     if (m.status === "processing") return "Processing…";
@@ -85,7 +84,7 @@
     const thumb = document.createElement("img");
     thumb.className = "thumb";
     thumb.alt = "";
-    if (m.status !== "processing" && m.status !== "processingFailed") thumb.src = fileUrl(m.overview);
+    if (m.status !== "processing" && m.status !== "processingFailed") thumb.src = m.overview;
 
     const text = div("text");
     text.append(div("title", m.title), div("sub", whenText(m)));

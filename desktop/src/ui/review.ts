@@ -14,7 +14,8 @@
     ready = true;
     status.style.display = "none";
     form.style.display = "block";
-    video.src = `file://${d.video.split("/").map(encodeURIComponent).join("/")}`;
+    video.src = d.video;
+    el("copy-wsl").hidden = !d.wsl;
     transcript.value = d.transcript;
     note.value = d.note;
     if (d.transcription === "unavailable") hint.textContent = "Speech-to-text didn't run, so there's no transcript. Type what you said here if it matters.";
@@ -26,6 +27,7 @@
   });
 
   el("copy").onclick = copy;
+  el("copy-wsl").onclick = () => vp.reviewCopy({ transcriptText: transcript.value, note: note.value }, true);
   el("discard").onclick = () => vp.reviewDiscard();
   addEventListener("keydown", (e) => {
     // Return copies, unless the cursor is in a text box.

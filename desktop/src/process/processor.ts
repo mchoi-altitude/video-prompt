@@ -1,6 +1,7 @@
 // Port of Sources/VPProcess/Processor.swift and Finalize.swift, with ffmpeg in place of AVFoundation.
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { logsClicks } from "../core/platform";
 import { buildTimeline, describeStroke, renderTimeline, round2, segmentOffsets, sentences, titleFor, toFramePixels } from "../core/timeline";
 import {
   VIDEO_FPS,
@@ -180,7 +181,7 @@ async function runPipeline(id: string, dir: string, raw: string, session: RawSes
     overviewSecondsPerTile: secondsPerTile,
     strokes,
     clicks,
-    clicksLogged: process.platform === "win32",
+    clicksLogged: logsClicks(process.platform),
     timeline: buildTimeline(transcript, strokes, clicks, clears, pauses),
   };
   writeJSON(join(dir, "manifest.json"), manifest);

@@ -35,6 +35,8 @@
       button:hover:enabled .hint { color: inherit; opacity: 0.8; }
       button:disabled { opacity: 0.4; }
       button[hidden], hr[hidden] { display: none; }
+      .check { display: inline-block; width: 16px; visibility: hidden; }
+      .checked .check { visibility: visible; }
       .hint { color: color-mix(in srgb, CanvasText 55%, transparent); }
       hr { border: 0; border-top: 1px solid color-mix(in srgb, CanvasText 14%, transparent); margin: 4px 9px; }
     </style>
@@ -43,6 +45,8 @@
     <div id="menu">
       <button id="stop" hidden><span>Stop recording</span></button>
       <button id="record"><span>Record…</span><span class="hint">Ctrl+Alt+Shift+R</span></button>
+      <button id="record-screen" hidden><span><span class="check">✓</span>Record whole screen</span><span class="hint"></span></button>
+      <button id="record-area" hidden><span><span class="check">✓</span>Record selected area…</span><span class="hint"></span></button>
       <hr />
       <button id="recordings"><span>Recordings…</span><span class="hint" id="count"></span></button>
       <button id="settings"><span>Settings…</span></button>

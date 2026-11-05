@@ -3,9 +3,12 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Word } from "../core/models";
+import { modelCandidates, toolPath, whisperCandidates } from "../core/platform";
 
-export const ffmpeg = process.env.VIDEO_PROMPT_FFMPEG ?? "ffmpeg";
-export const ffprobe = process.env.VIDEO_PROMPT_FFPROBE ?? "ffprobe";
+/** The folder with package.json: desktop/ from source, resources/app installed. */
+const appDir = join(__dirname, "../..");
+export const ffmpeg = toolPath(process.platform, "ffmpeg", process.env, appDir);
+export const ffprobe = toolPath(process.platform, "ffprobe", process.env, appDir);
 
 /** Runs a tool to completion; rejects with the end of its stderr on failure. */
 export function run(cmd: string, args: string[]): Promise<string> {
@@ -57,10 +60,9 @@ export async function mediaDuration(file: string): Promise<number> {
 
 /** `whisper-cli`, under either name it's installed as; null when it or the model is missing. */
 export function findWhisper(modelsDir: string): { cli: string; model: string } | null {
-  const model = process.env.VIDEO_PROMPT_WHISPER_MODEL ?? join(modelsDir, "ggml-base.en.bin");
-  const candidates = [process.env.VIDEO_PROMPT_WHISPER_CLI, "/usr/bin/whisper-cli", "/usr/bin/whisper-cpp", join(__dirname, "../../vendor/bin/whisper-cli")];
-  const cli = candidates.find((c): c is string => !!c && existsSync(c));
-  return cli && existsSync(model) ? { cli, model } : null;
+  const model = modelCandidates(process.platform, process.env, modelsDir, appDir).find((m) => existsSync(m));
+  const cli = whisperCandidates(process.platform, process.env, appDir).find((c) => existsSync(c));
+  return cli && model ? { cli, model } : null;
 }
 
 /** One segment per word, so each word carries its own timestamps. */

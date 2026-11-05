@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld("vp", {
   trayMenuAction: (action: string) => ipcRenderer.send("tray-menu-action", action),
   trayMenuClose: () => ipcRenderer.send("tray-menu-close"),
 
+  pickerDone: (area: object | null) => ipcRenderer.send("picker-done", area),
+
   countdownDone: () => ipcRenderer.send("countdown-done"),
   onInit: on("init"),
   onRegion: on("region"),
@@ -33,7 +35,7 @@ contextBridge.exposeInMainWorld("vp", {
 
   onReviewReady: on("review-ready"),
   onReviewFailed: on("review-failed"),
-  reviewCopy: (edits: object) => ipcRenderer.send("review-copy", edits),
+  reviewCopy: (edits: object, wsl = false) => ipcRenderer.send("review-copy", edits, wsl),
   reviewDiscard: () => ipcRenderer.send("review-discard"),
 
   recordingsList: () => ipcRenderer.invoke("recordings-list"),

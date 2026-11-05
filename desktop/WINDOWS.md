@@ -7,6 +7,28 @@ through this with the person at the keyboard.
 The Fedora app in this folder already works, so adapt it rather than building a throwaway test. This
 replaces the setup in `desktop-spike/README.md`, but its Windows checks (W1, W2 and hand-off) still apply.
 
+## Status (2026-11-05)
+
+Steps 1–7 of "Order of work" below are done on the `feat/windows-desktop` branch and were confirmed by a
+person on Windows 11 25H2, with one monitor at 100% and 150%:
+
+- Overlay, control bar (hidden from the video), area picker, coordinates, pause, whisper, review,
+  Recordings, auto-delete, Retry, and the installer.
+- Hand-off from PowerShell, where a fresh Claude Code session found a menu item that was on screen for
+  about a second.
+
+Platform differences are in `src/core/platform.ts`. Windows-specific lessons are under "Windows notes" in
+`CLAUDE.md`.
+
+Still open:
+
+- **Claude Code in WSL, end to end:** `vp-frames.sh` works from WSL, but nobody has pasted a Copy WSL path
+  into Claude Code there.
+- **Multi-monitor and mixed scales:** there's one picker per display, but it's untested.
+- **Publishing:** a separate `windows-beta` release, after Michael approves. The H.264 patent question is
+  his to decide too.
+- **Later:** click rings (a native mouse hook) and the MCP plugin.
+
 ## Ground rules
 
 - **The person is your eyes.** You probably can't see overlays or judge how they behave. Give one short

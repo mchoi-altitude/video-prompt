@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,10 +7,20 @@ import { test } from "node:test";
 import type { Manifest, Manifest as M, RecordingMeta } from "../core/models";
 import { buildTimeline, expiredRecordings, type Retention, describeStroke, renderTimeline, segmentOffsets, sentences, stamp, titleFor, toFramePixels } from "../core/timeline";
 import { finalize, makePaths, processRecording, readJSON, recoverInterrupted } from "../process/processor";
-import { parseWhisper } from "../process/tools";
+import { ffmpeg, ffprobe, parseWhisper } from "../process/tools";
 import { blended, locate, patternSteps, SAMPLE_INSET, stepLevel, type RGB, type Step } from "../core/locate";
 
 const repo = join(__dirname, "../../..");
+
+/** Runs bin/vp-frames, or bin/vp-frames.cmd on Windows. Node runs a .cmd only through cmd.exe, which
+ * needs each argument quoted, since test folders have spaces. */
+function runVpFrames(args: string[]): Buffer {
+  if (process.platform !== "win32") return execFileSync(join(repo, "desktop/bin/vp-frames"), args);
+  const line = [join(repo, "desktop", "bin", "vp-frames.cmd"), ...args].map((a) => `"${a}"`).join(" ");
+  const r = spawnSync(process.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", `"${line}"`], { windowsVerbatimArguments: true });
+  if (r.status !== 0) throw new Error(`vp-frames.cmd exited ${r.status}: ${r.stderr}`);
+  return r.stdout;
+}
 const circle: number[][] = [[47, 554], [90, 514], [180, 514], [223, 554], [180, 594], [90, 594], [47, 560], [50, 555], [47, 554]];
 
 test("the timeline matches the Mac's golden file, apart from the design's §7 differences", () => {
@@ -41,6 +51,31 @@ test("the timeline matches the Mac's golden file, apart from the design's §7 di
     .replace("--from 12.0 --to 14.0", "--from 0.0 --to 2.0")
     .replace("- **[00:07.0]** The recorded window was hidden\n", "");
   assert.equal(renderTimeline(m, "/R", "/Apps/vp-frames"), golden);
+});
+
+test("on Windows the timeline gives vp-frames for PowerShell, Git Bash and WSL", () => {
+  const m: M = {
+    id: "x", duration: 5, mode: "area", transcript: [], transcription: "noAudio",
+    video: { file: "video.mp4", width: 100, height: 100, fps: 10, hasAudio: false },
+    overview: "overview.jpg", overviewSecondsPerTile: 1, strokes: [], clicks: [], clicksLogged: false, timeline: [],
+  };
+  const dir = "C:\\Users\\A B\\AppData\\Local\\VideoPrompt\\recordings\\x";
+  const text = renderTimeline(m, dir, "C:\\Users\\A B\\AppData\\Local\\Programs\\Video Prompt\\resources\\app\\bin\\vp-frames.cmd");
+  const section = text.slice(text.indexOf("## The recording"), text.indexOf("## Timeline"));
+  assert.equal(section, [
+    "## The recording",
+    "",
+    "- **Video:** `C:\\Users\\A B\\AppData\\Local\\VideoPrompt\\recordings\\x\\video.mp4` (100×100, 10 fps). It shows only the selected area.",
+    "- **Overview:** `C:\\Users\\A B\\AppData\\Local\\VideoPrompt\\recordings\\x\\overview.jpg` (in WSL: `/mnt/c/Users/A B/AppData/Local/VideoPrompt/recordings/x/overview.jpg`): one thumbnail per second. Look at it first.",
+    "- **Look closer at any moment:** run",
+    "  the command for your shell, and view the JPEGs it prints with your Read tool.",
+    "  - PowerShell: `& \"C:\\Users\\A B\\AppData\\Local\\Programs\\Video Prompt\\resources\\app\\bin\\vp-frames.cmd\" \"C:\\Users\\A B\\AppData\\Local\\VideoPrompt\\recordings\\x\\video.mp4\" --from 0.0 --to 2.0 --fps 5`",
+    "  - Git Bash: `\"C:/Users/A B/AppData/Local/Programs/Video Prompt/resources/app/bin/vp-frames.sh\" \"C:/Users/A B/AppData/Local/VideoPrompt/recordings/x/video.mp4\" --from 0.0 --to 2.0 --fps 5`",
+    "  - WSL: `\"/mnt/c/Users/A B/AppData/Local/Programs/Video Prompt/resources/app/bin/vp-frames.sh\" \"/mnt/c/Users/A B/AppData/Local/VideoPrompt/recordings/x/video.mp4\" --from 0.0 --to 2.0 --fps 5`",
+    "  Check the moments the narration and drawings point to; brief states may last under a second.",
+    "",
+    "",
+  ].join("\n"));
 });
 
 test("timeline leaves out click wording where clicks can't be logged", () => {
@@ -116,7 +151,7 @@ test("recordings cut off by a crash are listed as failed, and Retry recovers the
   const raw = start("cut-off");
   // A file that stops mid-write, as a crash leaves it.
   const whole = join(raw, "whole.webm");
-  execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "testsrc2=s=640x400:r=10:d=3", "-f", "lavfi", "-i", "sine=frequency=440:duration=3", "-c:v", "libvpx", "-b:v", "1M", "-c:a", "libopus", whole]);
+  execFileSync(ffmpeg, ["-v", "error", "-f", "lavfi", "-i", "testsrc2=s=640x400:r=10:d=3", "-f", "lavfi", "-i", "sine=frequency=440:duration=3", "-c:v", "libvpx", "-b:v", "1M", "-c:a", "libopus", whole]);
   const bytes = readFileSync(whole);
   writeFileSync(join(raw, "seg_001.webm"), bytes.subarray(0, Math.floor(bytes.length * 0.7)));
   rmSync(whole);
@@ -144,7 +179,7 @@ test("a very short recording still gets its overview", async () => {
   const id = "20261104-150000";
   const raw = join(paths.recordings, id, "raw");
   mkdirSync(raw, { recursive: true });
-  execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "testsrc2=s=696x444:r=10:d=0.3", "-f", "lavfi", "-i", "sine=frequency=440:duration=0.3", "-c:v", "libvpx", "-b:v", "1M", "-c:a", "libopus", join(raw, "seg_001.webm")]);
+  execFileSync(ffmpeg, ["-v", "error", "-f", "lavfi", "-i", "testsrc2=s=696x444:r=10:d=0.3", "-f", "lavfi", "-i", "sine=frequency=440:duration=0.3", "-c:v", "libvpx", "-b:v", "1M", "-c:a", "libopus", join(raw, "seg_001.webm")]);
   writeFileSync(join(raw, "session.json"), JSON.stringify({ mode: "area", display: { x: 0, y: 0, w: 696, h: 444 }, area: { x: 0, y: 0, w: 696, h: 444 }, createdAt: new Date().toISOString() }));
   writeFileSync(join(raw, "events.jsonl"), "");
   assert.equal((await processRecording(id, paths, "/vp-frames")).status, "reviewing");
@@ -164,7 +199,7 @@ test("a region from the system dialog is kept whole, and its marks don't claim c
   const id = "20261104-130000";
   const raw = join(paths.recordings, id, "raw");
   mkdirSync(raw, { recursive: true });
-  execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "testsrc2=s=488x318:r=10:d=1", "-c:v", "libvpx", "-b:v", "1M", join(raw, "seg_001.webm")]);
+  execFileSync(ffmpeg, ["-v", "error", "-f", "lavfi", "-i", "testsrc2=s=488x318:r=10:d=1", "-c:v", "libvpx", "-b:v", "1M", join(raw, "seg_001.webm")]);
   writeFileSync(join(raw, "session.json"), JSON.stringify({
     mode: "area", display: { x: 0, y: 0, w: 1920, h: 1200 }, area: { x: 0, y: 0, w: 1920, h: 1200 }, regionFromDialog: true, createdAt: new Date().toISOString(),
   }));
@@ -211,7 +246,7 @@ test("marks in a located region get real video coordinates", async () => {
   const id = "20261104-140000";
   const raw = join(paths.recordings, id, "raw");
   mkdirSync(raw, { recursive: true });
-  execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "testsrc2=s=488x318:r=10:d=1", "-c:v", "libvpx", "-b:v", "1M", join(raw, "seg_001.webm")]);
+  execFileSync(ffmpeg, ["-v", "error", "-f", "lavfi", "-i", "testsrc2=s=488x318:r=10:d=1", "-c:v", "libvpx", "-b:v", "1M", join(raw, "seg_001.webm")]);
   writeFileSync(join(raw, "session.json"), JSON.stringify({
     mode: "area", display: { x: 0, y: 0, w: 1920, h: 1200 }, area: { x: 700, y: 400, w: 488, h: 318 }, regionFromDialog: true, regionLocated: true, createdAt: new Date().toISOString(),
   }));
@@ -231,7 +266,7 @@ test("processing joins paused segments, crops to the area and maps marks to vide
   const raw = join(paths.recordings, id, "raw");
   mkdirSync(raw, { recursive: true });
   for (const [n, d] of [[1, 2], [2, 1]]) {
-    execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", `testsrc2=s=1920x1200:r=10:d=${d}`,
+    execFileSync(ffmpeg, ["-v", "error", "-f", "lavfi", "-i", `testsrc2=s=1920x1200:r=10:d=${d}`,
       "-f", "lavfi", "-i", `sine=frequency=440:duration=${d}`, "-c:v", "libvpx", "-b:v", "1M", "-c:a", "libopus", join(raw, `seg_00${n}.webm`)]);
   }
   writeFileSync(join(raw, "session.json"), JSON.stringify({
@@ -255,7 +290,7 @@ test("processing joins paused segments, crops to the area and maps marks to vide
   assert.deepEqual(m.strokes[0].bbox, [0, 0, 800, 10]);
   const pause = m.timeline.find((i) => i.kind === "pause")!;
   assert.ok(pause.time > 1.8 && pause.time < 2.4, `pause at ${pause.time}`);
-  const frames = Number(execFileSync("ffprobe", ["-v", "error", "-count_packets", "-select_streams", "v:0", "-show_entries", "stream=nb_read_packets", "-of", "csv=p=0", join(dir, "video.mp4")]).toString().replace(/\D/g, ""));
+  const frames = Number(execFileSync(ffprobe, ["-v", "error", "-count_packets", "-select_streams", "v:0", "-show_entries", "stream=nb_read_packets", "-of", "csv=p=0", join(dir, "video.mp4")]).toString().replace(/\D/g, ""));
   assert.ok(Math.abs(frames / m.duration - 10) < 1, `${frames} frames in ${m.duration}s`);
   assert.equal(readJSON<RecordingMeta>(join(dir, "meta.json")).status, "reviewing");
 
@@ -265,8 +300,13 @@ test("processing joins paused segments, crops to the area and maps marks to vide
   assert.match(text, /## Typed note\n\nA note/);
   assert.equal(readJSON<RecordingMeta>(join(dir, "meta.json")).status, "ready");
 
-  const script = join(repo, "desktop/bin/vp-frames");
-  const out = execFileSync(script, [join(dir, "video.mp4"), "--from", "0.5", "--to", "1", "--fps", "2"]).toString().trim().split("\n");
-  assert.deepEqual(out.map((p) => p.replace(/.*\//, "")), ["001_t00000.50s.jpg", "002_t00001.00s.jpg"]);
-  assert.match(execFileSync("ffprobe", ["-v", "error", "-show_entries", "stream=width", "-of", "csv=p=0", out[0]]).toString(), /800/);
+  const out = runVpFrames([join(dir, "video.mp4"), "--from", "0.5", "--to", "1", "--fps", "2"]).toString().trim().split(/\r?\n/);
+  assert.deepEqual(out.map((p) => p.replace(/.*[\\/]/, "")), ["001_t00000.50s.jpg", "002_t00001.00s.jpg"]);
+  assert.match(execFileSync(ffprobe, ["-v", "error", "-show_entries", "stream=width", "-of", "csv=p=0", out[0]]).toString(), /800/);
+
+  // Windows: Git Bash runs vp-frames.sh instead, since cmd splits the .cmd's path at spaces there.
+  if (process.platform === "win32") {
+    const sh = execFileSync("bash", [join(repo, "desktop", "bin", "vp-frames.sh"), join(dir, "video.mp4"), "--from", "0.5", "--to", "1", "--fps", "2"]);
+    assert.deepEqual(sh.toString().trim().split(/\r?\n/).map((p) => p.replace(/.*[\\/]/, "")), ["001_t00000.50s.jpg", "002_t00001.00s.jpg"]);
+  }
 });

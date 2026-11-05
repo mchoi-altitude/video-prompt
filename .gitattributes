@@ -1,0 +1,5 @@
+# LF everywhere, also in Windows checkouts: shell scripts run from WSL, and tests compare files byte for byte.
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.icns binary

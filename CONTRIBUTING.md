@@ -8,7 +8,8 @@ Please don't attach recordings or screenshots that show anything private, becaus
 ## Running the tests
 
 - **macOS app:** `scripts/test.sh`. See "Developing" in the [README](README.md) for setup.
-- **Fedora app:** in `desktop/`, run `npm ci`, then `npm test`. It needs Node.js LTS and ffmpeg.
+- **Fedora and Windows app:** in `desktop/`, run `npm ci`, then `npm test`. It needs Node.js LTS, and
+  ffmpeg on Linux. On Windows, run `node scripts/fetch-tools.mjs` first instead of installing ffmpeg.
 
 ## License
 

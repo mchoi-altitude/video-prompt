@@ -1,6 +1,6 @@
 // Port of Sources/VPCore/Timeline.swift, Sentences.swift and Markdown.swift. Coordinates, stroke
 // descriptions, times, sentence splitting and rounding must match the Mac.
-import { join } from "node:path";
+import { posix, win32 } from "node:path";
 import type { Manifest, ManifestClick, ManifestStroke, Point, Rect, Sentence, StrokeTool, TimelineItem, Word } from "./models";
 
 export const round2 = (x: number) => Math.round(x * 100) / 100;
@@ -137,9 +137,34 @@ function exampleRange(m: Manifest): [string, string] {
   return [from.toFixed(1), to.toFixed(1)];
 }
 
+/** `C:\…` or `C:/…`. */
+export const isWindowsPath = (p: string) => /^[A-Za-z]:[\\/]/.test(p);
+
+/** `C:\Users\A B\x` → `/mnt/c/Users/A B/x`: the same file as WSL sees it, under its default mount root. */
+export const toWslPath = (p: string) => `/mnt/${p[0].toLowerCase()}${p.slice(2).replace(/\\/g, "/")}`;
+
+/** How to run vp-frames. Windows lists a form for each shell Claude Code may use there: PowerShell runs
+ * vp-frames.cmd (and needs `&`), while Git Bash and WSL run vp-frames.sh, since cmd splits a .cmd's path
+ * at spaces when Git Bash starts it. */
+function vpFramesCommands(vpFrames: string, video: string, range: string, windows: boolean): string[] {
+  if (!windows) return [`  \`"${vpFrames}" "${video}" ${range}\` and view the JPEGs it prints with your Read tool.`];
+  const sh = vpFrames.replace(/vp-frames\.cmd$/i, "vp-frames.sh");
+  const slashes = (p: string) => p.replace(/\\/g, "/");
+  return [
+    "  the command for your shell, and view the JPEGs it prints with your Read tool.",
+    `  - PowerShell: \`& "${vpFrames}" "${video}" ${range}\``,
+    `  - Git Bash: \`"${slashes(sh)}" "${slashes(video)}" ${range}\``,
+    `  - WSL: \`"${toWslPath(sh)}" "${toWslPath(video)}" ${range}\``,
+  ];
+}
+
 /** `timeline.md`: what the user said and drew, with timestamps, plus how to look at the video. */
 export function renderTimeline(m: Manifest, recordingDir: string, vpFrames: string): string {
+  // Paths follow the folder's own style, whichever system renders them.
+  const windows = isWindowsPath(recordingDir);
+  const { join } = windows ? win32 : posix;
   const video = join(recordingDir, m.video.file);
+  const overview = join(recordingDir, m.overview);
   const [from, to] = exampleRange(m);
   const lines = [
     `# Screen recording ${m.id} (${length(m.duration)} long)`,
@@ -158,9 +183,9 @@ export function renderTimeline(m: Manifest, recordingDir: string, vpFrames: stri
     "## The recording",
     "",
     `- **Video:** \`${video}\` (${m.video.width}×${m.video.height}, ${m.video.fps} fps${m.video.hasAudio ? ", with narration audio" : ""}). It shows only the selected area.`,
-    `- **Overview:** \`${join(recordingDir, m.overview)}\`: one thumbnail per ${every}. Look at it first.`,
+    `- **Overview:** \`${overview}\`${windows ? ` (in WSL: \`${toWslPath(overview)}\`)` : ""}: one thumbnail per ${every}. Look at it first.`,
     "- **Look closer at any moment:** run",
-    `  \`"${vpFrames}" "${video}" --from ${from} --to ${to} --fps 5\` and view the JPEGs it prints with your Read tool.`,
+    ...vpFramesCommands(vpFrames, video, `--from ${from} --to ${to} --fps 5`, windows),
     `  Check the moments the ${pointers} point to; brief states may last under a second.`,
     "",
     "## Timeline",

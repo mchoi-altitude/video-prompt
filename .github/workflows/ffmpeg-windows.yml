@@ -24,10 +24,16 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain
-        run: sudo apt-get update && sudo apt-get install -y gcc mingw-w64 nasm pkgconf make zip xz-utils
+        timeout-minutes: 10
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo -E apt-get update
+          sudo -E apt-get install -y --no-install-recommends gcc mingw-w64 nasm pkgconf make zip xz-utils
       - name: Build
         run: desktop/scripts/build-ffmpeg-win.sh "$RUNNER_TEMP/work" "$RUNNER_TEMP/out"
       - name: Sizes
@@ -48,6 +54,7 @@ jobs:
   check:
     needs: build
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

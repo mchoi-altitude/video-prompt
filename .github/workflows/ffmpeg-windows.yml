@@ -1,0 +1,96 @@
+# Builds the ffmpeg that the Windows installer bundles (desktop/scripts/build-ffmpeg-win.sh) and checks it on
+# Windows. On a pull request it only builds and checks; the result is a downloadable artifact.
+# To publish: Actions → "ffmpeg for Windows" → Run workflow on main, with "publish" ticked. That creates the
+# release named in the script (e.g. ffmpeg-win64-9.0.2-1) with the zip and its sources, which
+# desktop/scripts/fetch-tools.mjs pins by checksum. A release is never replaced: bump BUILD in the script instead.
+name: ffmpeg for Windows
+
+on:
+  pull_request:
+    paths:
+      - desktop/scripts/build-ffmpeg-win.sh
+      - desktop/scripts/check-ffmpeg.mjs
+      - .github/workflows/ffmpeg-windows.yml
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the build as a release (only from main)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc mingw-w64 nasm pkgconf make zip xz-utils
+      - name: Build
+        run: desktop/scripts/build-ffmpeg-win.sh "$RUNNER_TEMP/work" "$RUNNER_TEMP/out"
+      - name: Sizes
+        run: |
+          cd "$RUNNER_TEMP"
+          {
+            echo "### $(cat out/TAG)"
+            echo '| File | Size |'
+            echo '|---|---|'
+            for f in work/stage/*/bin/*.exe out/*.zip; do echo "| $(basename "$f") | $(du -h "$f" | cut -f1) |"; done
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-win64
+          path: ${{ runner.temp }}/out
+          retention-days: 30
+
+  check:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          name: ffmpeg-win64
+          path: ${{ runner.temp }}/out
+      - name: Unpack
+        shell: pwsh
+        run: |
+          $tag = (Get-Content "$env:RUNNER_TEMP\out\TAG").Trim()
+          Expand-Archive "$env:RUNNER_TEMP\out\$tag.zip" "$env:RUNNER_TEMP\unpacked"
+          "BIN=$env:RUNNER_TEMP\unpacked\$tag\bin" >> $env:GITHUB_ENV
+      - name: Codecs, licence and a smoke run
+        run: node desktop/scripts/check-ffmpeg.mjs "${{ env.BIN }}" --smoke
+      - name: Encoders and decoders
+        shell: pwsh
+        run: |
+          & "$env:BIN\ffmpeg.exe" -hide_banner -encoders
+          & "$env:BIN\ffmpeg.exe" -hide_banner -decoders
+
+  publish:
+    needs: check
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ffmpeg-win64
+          path: out
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          cd out
+          tag=$(cat TAG)
+          sha256sum -c SHA256SUMS.txt
+          # Fails if the tag already exists, so a published build can't be replaced.
+          gh release create "$tag" "$tag.zip" ffmpeg-*.tar.xz libvpx-*.tar.gz opus-*.tar.gz build-ffmpeg-win.sh \
+            SHA256SUMS.txt --target "$GITHUB_SHA" --latest=false \
+            --title "ffmpeg for the Windows app ($tag)" --notes-file BUILD-INFO.txt

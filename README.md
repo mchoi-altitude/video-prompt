@@ -4,7 +4,7 @@ Record your screen, draw on it, and talk through what you want — then hand tha
 Claude Code as a prompt.
 
 **Status:** early. The macOS app is in internal beta. The Fedora app runs from source and is still
-being tested. The Windows app builds from source and is being tested; there's no published download yet.
+being tested. The Windows app is in beta, with a download below.
 
 ## Install
 
@@ -77,10 +77,12 @@ g++, and replaces the `linux-beta` release. `npm run package` builds it without 
 
 ### Windows
 
-Tested on Windows 11 25H2, one monitor at 100% and 150% scale. There's no published download yet, so build
-the installer from source (below), then run `VideoPrompt-windows-beta-setup.exe`. It installs for your user
-only, needs no admin rights, and includes everything: ffmpeg, whisper.cpp and the speech model. It isn't
-signed, so Windows SmartScreen says "Windows protected your PC": choose **More info**, then **Run anyway**.
+Tested on Windows 11 25H2, one monitor at 100% and 150% scale. Download
+[`VideoPrompt-windows-beta-setup.exe`](https://github.com/mchoi-altitude/video-prompt/releases/download/windows-beta/VideoPrompt-windows-beta-setup.exe)
+from the [windows-beta](https://github.com/mchoi-altitude/video-prompt/releases/tag/windows-beta) pre-release and
+run it; to update, do the same. It installs for your user only, needs no admin rights, and includes
+everything: ffmpeg, whisper.cpp and the speech model. It isn't signed, so Windows SmartScreen says "Windows
+protected your PC": choose **More info**, then **Run anyway**.
 
 The app appears in the system tray, possibly under the **^** arrow. Click it and choose **Record whole
 screen** or **Record selected area…** (drag a rectangle; Esc cancels). Ctrl+Alt+Shift+R starts the one you
@@ -92,16 +94,21 @@ The recording tells Claude how to look at the video from PowerShell, Git Bash or
 Good to know:
 
 - **Clicks** aren't logged yet: that needs a native mouse hook.
+- **Videos** are VP9 with Opus sound, still named `video.mp4`, because the Windows app ships no H.264 or AAC
+  codec of its own. Windows 11's Media Player plays them, sound included.
 - **Recordings** are in `%LOCALAPPDATA%\VideoPrompt` and go to the Recycle Bin after 3 days by default,
   which you can change in **Recordings…**. If the app stops mid-recording, that recording shows there as
   failed, with a **Retry** button.
 - **Uninstall** from Settings → Apps. It keeps `%LOCALAPPDATA%\VideoPrompt`, which holds your recordings.
 
 To run from source, with Node.js LTS, in `desktop/`: `node scripts/fetch-tools.mjs` (downloads pinned,
-checksum-verified ffmpeg, whisper-cli and speech model into `vendor/`), then `npm ci` and `npm start`.
-`npm run package:win` builds `out/VideoPrompt-windows-beta-setup.exe`. The bundled ffmpeg is an unmodified
-GPL build from [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds); its license and source links
-ship next to it. Notes for whoever continues the Windows work: [`desktop/WINDOWS.md`](desktop/WINDOWS.md).
+checksum-verified ffmpeg, whisper-cli, speech model and Electron's H.264-free `ffmpeg.dll` into `vendor/`),
+then `npm ci` and `npm start`. `npm run package:win` builds `out/VideoPrompt-windows-beta-setup.exe`. The
+bundled ffmpeg is our own LGPL build without H.264 or AAC
+([`desktop/scripts/build-ffmpeg-win.sh`](desktop/scripts/build-ffmpeg-win.sh)); its licenses and a link to
+its source ship next to it. Publishing (maintainers): Actions → **windows-beta** → Run workflow on `main`
+builds and checks the installer, then replaces the `windows-beta` pre-release. Notes for whoever continues
+the Windows work: [`desktop/WINDOWS.md`](desktop/WINDOWS.md).
 
 ## Developing
 

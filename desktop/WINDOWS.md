@@ -20,13 +20,35 @@ person on Windows 11 25H2, with one monitor at 100% and 150%:
 Platform differences are in `src/core/platform.ts`. Windows-specific lessons are under "Windows notes" in
 `CLAUDE.md`.
 
+## Codecs (2026-11-06)
+
+The installer ships no H.264 or AAC encoder or decoder of its own, because of patents (Michael's decision).
+Mac and Linux are unchanged: their H.264 encoder comes from macOS or the user's system.
+
+- `video.mp4` is VP9 + Opus on Windows (`videoEncoding` in `src/core/platform.ts`): realtime speed 8,
+  CRF 36 capped at 4 Mbps, screen tuning, a full picture every 5 s, Opus at 64 kbps. On a real 162 s
+  recording it encoded faster than H.264 (3.8 s against 5.8 s) at 27% of the size, with text in
+  vp-frames' JPEGs reading the same.
+- **ffmpeg** is our own LGPL build: `scripts/build-ffmpeg-win.sh` builds only what the app and its tests use.
+  `scripts/check-ffmpeg.mjs` fails on any other encoder or decoder, and `--smoke` runs each kind of command
+  the app runs. To change it, edit the script, bump `BUILD`, run the "ffmpeg for Windows" workflow on main
+  with "publish" ticked, then update `FFMPEG_TAG` and `FFMPEG_SHA256` in `scripts/fetch-tools.mjs`. Before
+  it's released, `VIDEO_PROMPT_FFMPEG_ZIP=<zip>` makes fetch-tools use a local build.
+- **Electron's `ffmpeg.dll`** is swapped at packaging (`scripts/after-pack.cjs`) for Electron's build
+  without proprietary codecs. `npm start` still uses the standard one, so check review playback on an
+  installed build.
+- **Still in the installer:** the OpenH264 encoder compiled into `Video Prompt.exe` (Electron's WebRTC),
+  which only a custom Electron build could remove. Windows' own H.264, HEVC and AAC decoders, which Chromium
+  can call, come with Windows, not with us. Sisvel runs a patent pool that claims VP9 patents; that's
+  Michael's call.
+- **Publishing:** Actions → windows-beta → Run workflow on main builds the installer, installs and checks
+  it on GitHub's machine, then replaces the `windows-beta` pre-release.
+
 Still open:
 
 - **Claude Code in WSL, end to end:** `vp-frames.sh` works from WSL, but nobody has pasted a Copy WSL path
   into Claude Code there.
 - **Multi-monitor and mixed scales:** there's one picker per display, but it's untested.
-- **Publishing:** a separate `windows-beta` release, after Michael approves. The H.264 patent question is
-  his to decide too.
 - **Later:** click rings (a native mouse hook) and the MCP plugin.
 
 ## Ground rules

@@ -1,7 +1,7 @@
 // Port of Sources/VPProcess/Processor.swift and Finalize.swift, with ffmpeg in place of AVFoundation.
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { logsClicks } from "../core/platform";
+import { logsClicks, videoEncoding } from "../core/platform";
 import { buildTimeline, describeStroke, renderTimeline, round2, segmentOffsets, sentences, titleFor, toFramePixels } from "../core/timeline";
 import {
   VIDEO_FPS,
@@ -220,8 +220,9 @@ async function renderVideo(
   });
   filters.push(`${joined}concat=n=${files.length}:v=1:a=${hasAudio ? 1 : 0}${hasAudio ? "[v][a]" : "[v]"}`);
   const args = ["-v", "error", "-y", ...files.flatMap((f) => ["-i", f]), "-filter_complex", filters.join(";"), "-map", "[v]"];
-  if (hasAudio) args.push("-map", "[a]", "-c:a", "aac", "-b:a", "96k");
-  args.push("-c:v", h264Encoder(), "-b:v", "4M", "-r", String(VIDEO_FPS), "-movflags", "+faststart", out);
+  const encoding = videoEncoding(process.platform, h264Encoder);
+  if (hasAudio) args.push("-map", "[a]", ...encoding.audio);
+  args.push(...encoding.video, "-r", String(VIDEO_FPS), "-movflags", "+faststart", out);
   await run(ffmpeg, args);
 }
 

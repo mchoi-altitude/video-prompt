@@ -3,6 +3,8 @@ appId: ai.altitudeiq.videoprompt
 productName: Video Prompt
 # The app's own Electron, so the installer ships the version the tests ran on.
 electronDist: node_modules/electron/dist
+# Then its ffmpeg.dll is swapped for Electron's build without H.264 and AAC.
+afterPack: scripts/after-pack.cjs
 # Unpacked, so bin/ stays runnable: Claude runs vp-frames from there.
 asar: false
 directories:
@@ -13,7 +15,7 @@ files:
   - "!dist/test/**"
   - bin/vp-frames.cmd
   - bin/vp-frames.sh
-  # ffmpeg, ffprobe, whisper-cli, their licenses and the speech model, from scripts/fetch-tools.mjs.
+  # ffmpeg, ffprobe (our LGPL build), whisper-cli, their licenses and the speech model, from scripts/fetch-tools.mjs.
   - vendor/bin/**
   - vendor/models/**
 extraResources:

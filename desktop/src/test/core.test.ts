@@ -292,6 +292,9 @@ test("processing joins paused segments, crops to the area and maps marks to vide
   assert.ok(pause.time > 1.8 && pause.time < 2.4, `pause at ${pause.time}`);
   const frames = Number(execFileSync(ffprobe, ["-v", "error", "-count_packets", "-select_streams", "v:0", "-show_entries", "stream=nb_read_packets", "-of", "csv=p=0", join(dir, "video.mp4")]).toString().replace(/\D/g, ""));
   assert.ok(Math.abs(frames / m.duration - 10) < 1, `${frames} frames in ${m.duration}s`);
+  // Windows ships its own ffmpeg, without H.264 or AAC; Linux uses the system's, as before.
+  const codecs = execFileSync(ffprobe, ["-v", "error", "-show_entries", "stream=codec_name", "-of", "csv=p=0", join(dir, "video.mp4")]).toString().split(/\r?\n/).filter(Boolean);
+  assert.deepEqual(codecs, process.platform === "win32" ? ["vp9", "opus"] : ["h264", "aac"]);
   assert.equal(readJSON<RecordingMeta>(join(dir, "meta.json")).status, "reviewing");
 
   const timeline = finalize(id, { transcriptText: "Edited words.", note: "A note" }, paths, "/vp-frames");

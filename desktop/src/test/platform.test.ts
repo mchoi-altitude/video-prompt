@@ -1,7 +1,7 @@
 // Both systems' answers, checked on either one. The Linux ones are what the app used before Windows support.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { barTakesFocus, keepsDefaultMenu, captureMode, dataRoot, electronSwitches, hidesBarFromCapture, logsClicks, modelCandidates, restrictsDataFolder, toolPath, vpFramesPath, whisperCandidates, windowType } from "../core/platform";
+import { barTakesFocus, keepsDefaultMenu, captureMode, dataRoot, electronSwitches, hidesBarFromCapture, logsClicks, modelCandidates, restrictsDataFolder, toolPath, videoEncoding, vpFramesPath, whisperCandidates, windowType } from "../core/platform";
 
 const none = () => false;
 const all = () => true;
@@ -28,6 +28,21 @@ test("Linux finds tools where it did before", () => {
   assert.deepEqual(whisperCandidates("linux", { VIDEO_PROMPT_WHISPER_CLI: "/w" }, "/opt/app")[0], "/w");
   assert.deepEqual(modelCandidates("linux", {}, "/d/models", "/opt/app"), ["/d/models/ggml-base.en.bin"]);
   assert.deepEqual(modelCandidates("linux", { VIDEO_PROMPT_WHISPER_MODEL: "/m.bin" }, "/d/models", "/opt/app"), ["/m.bin"]);
+});
+
+test("Linux encodes H.264 + AAC exactly as before", () => {
+  assert.deepEqual(videoEncoding("linux", () => "libopenh264"), {
+    video: ["-c:v", "libopenh264", "-b:v", "4M"],
+    audio: ["-c:a", "aac", "-b:a", "96k"],
+  });
+});
+
+test("Windows encodes VP9 + Opus and never looks for H.264", () => {
+  assert.deepEqual(videoEncoding("win32", () => assert.fail("Windows must not look for an H.264 encoder")), {
+    video: ["-c:v", "libvpx-vp9", "-crf", "36", "-b:v", "4M", "-deadline", "realtime", "-cpu-used", "8", "-row-mt", "1",
+      "-tune-content", "screen", "-g", "50"],
+    audio: ["-c:a", "libopus", "-b:a", "64k"],
+  });
 });
 
 test("Windows uses AppData, its own picker and the bundled tools", () => {

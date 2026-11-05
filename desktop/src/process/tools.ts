@@ -25,7 +25,8 @@ export function run(cmd: string, args: string[]): Promise<string> {
 
 let chosenEncoder: string | undefined;
 
-/** Fedora can list an H.264 encoder that's a non-working stub, so test-encode before choosing. */
+/** Linux only (Windows writes VP9, see videoEncoding). Fedora can list an H.264 encoder that's a non-working
+ * stub, so test-encode before choosing. */
 export function h264Encoder(): string {
   if (chosenEncoder) return chosenEncoder;
   for (const enc of ["libx264", "libopenh264"]) {

@@ -26,9 +26,12 @@ handed to a Claude Code session.
 - **Windows: the same Electron app.** Platform differences live in `desktop/src/core/platform.ts`, whose
   tests check both systems' answers on either one; Linux answers must not change without a Fedora retest.
   Like the Mac, Windows has Record whole screen / Record selected area… (the app's own picker, no system
-  dialog) and hides the control bar from the video. It bundles a GPL ffmpeg build (Michael approved),
-  whisper-cli and the speech model (`desktop/scripts/fetch-tools.mjs`), in an unsigned per-user NSIS
-  installer (`npm run package:win`).
+  dialog) and hides the control bar from the video. It ships no H.264 or AAC codec of its own (patents;
+  Michael, 2026-11-06), so its `video.mp4` is VP9 + Opus. It bundles our own LGPL ffmpeg
+  (`desktop/scripts/build-ffmpeg-win.sh`, released by the "ffmpeg for Windows" workflow), Electron's
+  H.264-free `ffmpeg.dll` (`desktop/scripts/after-pack.cjs`), whisper-cli and the speech model, all pinned in
+  `desktop/scripts/fetch-tools.mjs`, in an unsigned per-user NSIS installer (`npm run package:win`). The
+  windows-beta workflow builds, checks and publishes it.
 
 ## Key technical facts (learned the hard way)
 
@@ -108,3 +111,12 @@ handed to a Claude Code session.
 - Git Bash's `tar` reads `C:` as a remote host. Use `%SystemRoot%\System32\tar.exe`.
 - From WSL, a Windows program gets an environment variable only if `WSLENV` names it.
 - `desktopCapturer` on Windows gives every screen without a dialog. Match `display_id` to `Display.id`.
+- `ffmpeg -codecs` lists h264 and aac even when no code for them is built in. Check with `-encoders` and
+  `-decoders` (`desktop/scripts/check-ffmpeg.mjs`).
+- Electron's own `ffmpeg.dll` decodes H.264 and AAC. Each Electron release also publishes
+  `ffmpeg-v<version>-win32-x64.zip` without them; VP9 is decoded by libvpx inside Electron, so review still
+  plays. Updating Electron means updating that zip's and DLL's checksums in `fetch-tools.mjs` and
+  `after-pack.cjs`. `electron.exe` itself still contains the OpenH264 encoder (WebRTC).
+- With the H.264-free DLL, an old H.264 recording still shows its picture through the graphics card's own
+  decoder, but has no sound.
+- ffmpeg.org can refuse connections. To build ffmpeg locally like CI, Docker Desktop's `ubuntu:24.04` works.

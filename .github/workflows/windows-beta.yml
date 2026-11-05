@@ -1,0 +1,104 @@
+# Builds the Windows installer on GitHub's Windows machine, installs it there and checks it. On a pull request
+# that's all; the installer is a downloadable artifact.
+# To publish: Actions → "windows-beta" → Run workflow on main. That replaces the windows-beta pre-release with the
+# new installer, as desktop/scripts/release.sh does for linux-beta. The README links to its download.
+name: windows-beta
+
+on:
+  pull_request:
+    paths:
+      - desktop/**
+      - .github/workflows/windows-beta.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency: windows-beta-${{ github.ref }}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Cached tools
+        uses: actions/cache@v4
+        with:
+          path: desktop/vendor/downloads
+          key: vendor-${{ hashFiles('desktop/scripts/fetch-tools.mjs') }}
+      - run: npm ci
+      - name: Build the installer (fetches the pinned tools, runs the tests)
+        run: npm run package:win
+      - name: Only pinned tools
+        shell: pwsh
+        run: |
+          if ($env:VIDEO_PROMPT_FFMPEG_ZIP) { throw "VIDEO_PROMPT_FFMPEG_ZIP is set: only the released ffmpeg may ship" }
+          if (Select-String -Quiet "UNPINNED" vendor\bin\ffmpeg-SOURCE.txt) { throw "ffmpeg isn't the released build" }
+      - name: Install and check
+        shell: pwsh
+        run: |
+          Start-Process -Wait out\VideoPrompt-windows-beta-setup.exe -ArgumentList "/S"
+          $app = "$env:LOCALAPPDATA\Programs\video-prompt"
+          if (-not (Test-Path "$app\Video Prompt.exe")) { throw "not installed at $app" }
+
+          # Our ffmpeg, and Electron's ffmpeg.dll without H.264 and AAC.
+          node scripts\check-ffmpeg.mjs "$app\resources\app\vendor\bin" --smoke
+          if ($LASTEXITCODE) { throw "check-ffmpeg failed" }
+          if ((Get-FileHash "$app\ffmpeg.dll").Hash -ne (Get-FileHash vendor\electron\ffmpeg.dll).Hash) {
+            throw "the installed ffmpeg.dll isn't Electron's build without H.264 and AAC"
+          }
+          # No x264 or x265 anywhere. OpenH264 in electron.exe is known (desktop/WINDOWS.md).
+          foreach ($f in Get-ChildItem $app -Recurse -Include *.exe, *.dll) {
+            $text = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($f.FullName))
+            if ($text -match 'x264 - core|x265 \(build') { throw "$($f.Name) contains x264 or x265" }
+            if ($text.Contains("OpenH264")) { "::warning::$($f.Name) contains OpenH264 (known: Electron's WebRTC encoder)" }
+          }
+
+          # The app starts and keeps running. It allows one copy, so close any the installer started.
+          Get-Process "Video Prompt" -ErrorAction SilentlyContinue | Stop-Process -Force
+          $env:VIDEO_PROMPT_HOME = "$env:RUNNER_TEMP\vp-home"
+          $p = Start-Process "$app\Video Prompt.exe" -PassThru
+          Start-Sleep -Seconds 10
+          if ($p.HasExited) { throw "the app exited at launch with code $($p.ExitCode)" }
+          Stop-Process -Id $p.Id -Force
+
+          # The installed vp-frames pulls a frame from a VP9 video.
+          & "$app\resources\app\vendor\bin\ffmpeg.exe" -v error -f lavfi -i testsrc2=s=320x240:r=10:d=2 -c:v libvpx-vp9 "$env:RUNNER_TEMP\t.mp4"
+          $frames = & "$app\resources\app\bin\vp-frames.cmd" "$env:RUNNER_TEMP\t.mp4" --from 1 --to 1
+          if (-not $frames -or -not (Test-Path $frames)) { throw "vp-frames gave no frame" }
+          "installed and checked: $frames"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VideoPrompt-windows-beta-setup
+          path: desktop/out/VideoPrompt-windows-beta-setup.exe
+          retention-days: 14
+
+  publish:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: VideoPrompt-windows-beta-setup
+      - name: Replace the windows-beta pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release delete windows-beta --yes --cleanup-tag 2>/dev/null || true
+          gh release create windows-beta VideoPrompt-windows-beta-setup.exe --prerelease --target "$GITHUB_SHA" \
+            --title "Video Prompt for Windows (beta)" \
+            --notes "Download VideoPrompt-windows-beta-setup.exe and run it. It installs for your user, with no admin rights.
+          It isn't signed, so Windows SmartScreen warns: choose More info, then Run anyway.
+          Built from ${GITHUB_SHA::7} by the windows-beta workflow."

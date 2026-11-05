@@ -3,6 +3,7 @@
 // Windows support, since Fedora can't be retested from Windows.
 import { existsSync } from "node:fs";
 import { posix, win32 } from "node:path";
+import { VIDEO_FPS } from "./models";
 
 export type Platform = NodeJS.Platform;
 type Env = Record<string, string | undefined>;
@@ -36,6 +37,21 @@ export const captureMode = (p: Platform): "dialog" | "picker" => (p === "win32" 
 
 /** Nothing logs clicks yet: Fedora can't see them, and Windows needs a native mouse hook. */
 export const logsClicks = (_p: Platform) => false;
+
+/** ffmpeg's encoder arguments for video.mp4. Linux keeps H.264 + AAC from the system's ffmpeg; `h264` finds a
+ * working H.264 encoder with a test encode, so only Linux calls it. Windows bundles its own ffmpeg, which has
+ * no H.264 or AAC (patents), so it writes VP9 + Opus, still named video.mp4: realtime speed, a quality target
+ * capped at Linux's 4 Mbps, tuned for screens, and a full picture every 5 s so frame pulls stay quick. */
+export function videoEncoding(p: Platform, h264: () => string): { video: string[]; audio: string[] } {
+  if (p === "win32") {
+    return {
+      video: ["-c:v", "libvpx-vp9", "-crf", "36", "-b:v", "4M", "-deadline", "realtime", "-cpu-used", "8", "-row-mt", "1",
+        "-tune-content", "screen", "-g", String(5 * VIDEO_FPS)],
+      audio: ["-c:a", "libopus", "-b:a", "64k"],
+    };
+  }
+  return { video: ["-c:v", h264(), "-b:v", "4M"], audio: ["-c:a", "aac", "-b:a", "96k"] };
+}
 
 /** Command-line switches the app needs, given when it starts. */
 export const electronSwitches = (p: Platform): string[] => (p === "linux" ? ["--ozone-platform=x11"] : []);

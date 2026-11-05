@@ -1,8 +1,11 @@
 #!/usr/bin/env node
-// Windows only: downloads the pinned ffmpeg, whisper-cli and speech model into vendor/, checksum-verified.
-// The same files are used to develop and to package. Downloads are kept in vendor/downloads.
+// Windows only: downloads the pinned ffmpeg, whisper-cli, speech model and Electron's ffmpeg.dll into vendor/,
+// checksum-verified. The same files are used to develop and to package. Downloads are kept in vendor/downloads.
+// ffmpeg is our own LGPL build without H.264 or AAC: scripts/build-ffmpeg-win.sh, released by
+// .github/workflows/ffmpeg-windows.yml. To try a build that isn't released, set VIDEO_PROMPT_FFMPEG_ZIP to its zip
+// (e.g. from that workflow's artifact). It isn't checksum-verified, and the windows-beta workflow refuses it.
 import { createHash } from "node:crypto";
-import { copyFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -14,15 +17,30 @@ if (process.platform !== "win32") {
   process.exit(1);
 }
 
-const FFMPEG_TAG = "autobuild-2026-09-30-13-08"; // a month-end build, which BtbN keeps long-term
-const FFMPEG_NAME = "ffmpeg-n9.0.2-17-g2a571b6068-win64-gpl-9.0";
+const FFMPEG_TAG = "ffmpeg-win64-9.0.2-1";
+const FFMPEG_SHA256 = ""; // of the released zip, set once the release exists
+const ELECTRON_VERSION = "45.2.2"; // must match package.json: its ffmpeg.dll replaces Electron's at packaging
 const WHISPER_TAG = "b5454"; // the Windows build of v1.9.5, the version Linux builds
+const REPO = "https://github.com/mchoi-altitude/video-prompt";
+
+const desktop = join(dirname(fileURLToPath(import.meta.url)), "..");
+const vendor = join(desktop, "vendor");
+const cache = join(vendor, "downloads");
+const bin = join(vendor, "bin");
+const models = join(vendor, "models");
+const electronDir = join(vendor, "electron");
+
+const electronWanted = JSON.parse(readFileSync(join(desktop, "package.json"), "utf8")).devDependencies.electron;
+if (electronWanted !== ELECTRON_VERSION) {
+  throw new Error(`package.json uses Electron ${electronWanted}: update ELECTRON_VERSION and the ffmpeg.dll checksums ` +
+    "here and in scripts/after-pack.cjs (from that release's SHASUMS256.txt)");
+}
+const localFfmpeg = process.env.VIDEO_PROMPT_FFMPEG_ZIP;
+if (!localFfmpeg && !FFMPEG_SHA256) {
+  throw new Error(`${FFMPEG_TAG} isn't released yet. Set VIDEO_PROMPT_FFMPEG_ZIP to a build of it (scripts/build-ffmpeg-win.sh).`);
+}
+
 const downloads = [
-  {
-    file: `${FFMPEG_NAME}.zip`,
-    url: `https://github.com/BtbN/FFmpeg-Builds/releases/download/${FFMPEG_TAG}/${FFMPEG_NAME}.zip`,
-    sha256: "a0e45723c72141975f51d8666302e614711745f3102b704ca3f82c897a58d278",
-  },
   {
     file: "whisper-bin-x64.zip",
     url: `https://github.com/ggml-org/whisper.cpp/releases/download/${WHISPER_TAG}/whisper-bin-x64.zip`,
@@ -38,13 +56,24 @@ const downloads = [
     url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
     sha256: "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002", // same as scripts/install.sh
   },
+  {
+    // Built by Electron without proprietary codecs: no H.264 or AAC. Checksum from the release's SHASUMS256.txt.
+    file: `ffmpeg-v${ELECTRON_VERSION}-win32-x64.zip`,
+    url: `https://github.com/electron/electron/releases/download/v${ELECTRON_VERSION}/ffmpeg-v${ELECTRON_VERSION}-win32-x64.zip`,
+    sha256: "f62587999170d22deca40d6c40d5b4faa2b23989b113c5f282792b2d873794aa",
+  },
 ];
+if (!localFfmpeg) {
+  downloads.push({ file: `${FFMPEG_TAG}.zip`, url: `${REPO}/releases/download/${FFMPEG_TAG}/${FFMPEG_TAG}.zip`, sha256: FFMPEG_SHA256 });
+}
 
-const vendor = join(dirname(fileURLToPath(import.meta.url)), "..", "vendor");
-const cache = join(vendor, "downloads");
-const bin = join(vendor, "bin");
-const models = join(vendor, "models");
-for (const d of [cache, bin, models]) mkdirSync(d, { recursive: true });
+mkdirSync(cache, { recursive: true });
+mkdirSync(models, { recursive: true });
+// Start clean, so nothing from an earlier ffmpeg (or its licence) is left to ship.
+for (const d of [bin, electronDir]) {
+  rmSync(d, { recursive: true, force: true });
+  mkdirSync(d, { recursive: true });
+}
 
 function sha256(file) {
   return createHash("sha256").update(readFileSync(file)).digest("hex");
@@ -87,31 +116,44 @@ function findDir(root, has) {
   return null;
 }
 
-const [ffmpegZip, whisperZip, whisperLicense, model] = await Promise.all(downloads.map(fetchPinned));
+const fetched = Object.fromEntries((await Promise.all(downloads.map(fetchPinned))).map((path, i) => [downloads[i].file, path]));
 
-const ff = unzip(ffmpegZip, "ffmpeg");
+// ffmpeg and ffprobe, with the build's licences and notes.
+if (localFfmpeg) console.warn(`WARNING: using ${localFfmpeg}, not the released ${FFMPEG_TAG}. It isn't checksum-verified.`);
+const ff = unzip(localFfmpeg ?? fetched[`${FFMPEG_TAG}.zip`], "ffmpeg");
 const ffBin = findDir(ff, "ffmpeg.exe");
-if (!ffBin) throw new Error("ffmpeg.exe not found in the ffmpeg download");
+if (!ffBin) throw new Error("ffmpeg.exe not found in the ffmpeg zip");
+const ffRoot = join(ffBin, "..");
 for (const exe of ["ffmpeg.exe", "ffprobe.exe"]) copyFileSync(join(ffBin, exe), join(bin, exe));
-copyFileSync(join(ffBin, "..", "LICENSE.txt"), join(bin, "ffmpeg-LICENSE.txt"));
+cpSync(join(ffRoot, "licenses"), join(bin, "ffmpeg-licenses"), { recursive: true });
+copyFileSync(join(ffRoot, "BUILD-INFO.txt"), join(bin, "ffmpeg-BUILD-INFO.txt"));
 writeFileSync(
   join(bin, "ffmpeg-SOURCE.txt"),
   [
-    "ffmpeg.exe and ffprobe.exe are an unmodified GPL build of FFmpeg by BtbN/FFmpeg-Builds.",
-    `Build: https://github.com/BtbN/FFmpeg-Builds/releases/tag/${FFMPEG_TAG} (${FFMPEG_NAME}.zip)`,
-    "Build scripts, including the versions of every bundled library: https://github.com/BtbN/FFmpeg-Builds",
-    "FFmpeg source for this build: https://github.com/FFmpeg/FFmpeg/tree/2a571b6068",
+    ...(localFfmpeg ? [`UNPINNED local build: ${localFfmpeg}`, ""] : []),
+    "ffmpeg.exe and ffprobe.exe are Video Prompt's own LGPL build of FFmpeg with libvpx and Opus. It has no H.264,",
+    "HEVC or AAC encoder or decoder. How it was built: ffmpeg-BUILD-INFO.txt. Licences: ffmpeg-licenses.",
+    `The build and all its source code: ${REPO}/releases/tag/${FFMPEG_TAG}`,
+    "",
+    "The app's ffmpeg.dll is Electron's own build without proprietary codecs (no H.264 or AAC):",
+    `ffmpeg-v${ELECTRON_VERSION}-win32-x64.zip from https://github.com/electron/electron/releases/tag/v${ELECTRON_VERSION}.`,
+    "Its licence is in LICENSES.chromium.html, next to the app.",
     "",
   ].join("\r\n"),
 );
 
-const wh = unzip(whisperZip, "whisper");
+// Electron's ffmpeg.dll without H.264 and AAC, which scripts/after-pack.cjs puts in the installer.
+const el = unzip(fetched[`ffmpeg-v${ELECTRON_VERSION}-win32-x64.zip`], "electron-ffmpeg");
+copyFileSync(join(el, "ffmpeg.dll"), join(electronDir, "ffmpeg.dll"));
+writeFileSync(join(electronDir, "VERSION"), ELECTRON_VERSION);
+
+const wh = unzip(fetched["whisper-bin-x64.zip"], "whisper");
 const whBin = findDir(wh, "whisper-cli.exe");
 if (!whBin) throw new Error("whisper-cli.exe not found in the whisper download");
 for (const f of readdirSync(whBin)) {
   if (f === "whisper-cli.exe" || f.toLowerCase().endsWith(".dll")) copyFileSync(join(whBin, f), join(bin, f));
 }
-copyFileSync(whisperLicense, join(bin, "whisper.cpp-LICENSE"));
-copyFileSync(model, join(models, "ggml-base.en.bin"));
+copyFileSync(fetched["whisper.cpp-LICENSE"], join(bin, "whisper.cpp-LICENSE"));
+copyFileSync(fetched["ggml-base.en.bin"], join(models, "ggml-base.en.bin"));
 
 console.log(`ready: ${bin}`);

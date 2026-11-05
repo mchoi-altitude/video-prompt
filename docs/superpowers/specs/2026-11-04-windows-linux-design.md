@@ -177,7 +177,8 @@ accounting for display scaling. Mixed-scale multi-monitor setups and Plasma's fr
 are known risks and need tests.
 
 **Processing.** Use ffmpeg to join segments, crop to the area, scale to at most 1080 px tall, force 10
-fps, draw click rings and write an H.264 `video.mp4` with AAC narration. Export 16 kHz mono audio for
+fps, draw click rings and write an H.264 `video.mp4` with AAC narration (on Windows, VP9 with Opus since
+2026-11-06, so the installer ships no H.264 or AAC codec; see `CLAUDE.md`). Export 16 kHz mono audio for
 whisper.cpp, using the same model and checksum as the Mac (`scripts/install.sh`). Then build
 `overview.jpg`, `manifest.json`, `timeline.md` and `meta.json`, using the same statuses and failure
 handling as `Processor.swift`. `raw/` is deleted on success and kept on failure, with a Retry.
@@ -218,6 +219,8 @@ source and publishes nothing, so this decision waits until the test passes.
 
 ffmpeg and whisper.cpp ship inside the app, partly because Fedora's default H.264 encoder can be a
 non-working stub (see `CLAUDE.md`). Their licenses and codecs need review before any public release.
+Reviewed for Windows on 2026-11-06: it bundles our own LGPL ffmpeg without H.264 or AAC, and Electron's
+H.264-free `ffmpeg.dll` (`desktop/WINDOWS.md`).
 
 ## 9. Test first: 2–3 days on real machines
 
